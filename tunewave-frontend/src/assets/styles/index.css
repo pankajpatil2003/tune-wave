@@ -1,0 +1,27 @@
+/* 1. Base styles */
+@tailwind base; 
+
+/* 2. Component classes */
+@tailwind components;
+
+/* 3. Utility classes */
+@tailwind utilities;
+
+/* Global styles can go here */
+
+/* Apply smooth transitions globally */
+* {
+    transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+    transition-duration: 300ms;
+    transition-timing-function: ease-in-out;
+}
+
+/* Set default body and text color for light mode */
+body {
+    @apply bg-gray-50 text-gray-900;
+}
+
+/* Set default body and text color for dark mode (using the Tailwind 'dark' class) */
+.dark body {
+    @apply bg-gray-900 text-gray-50;
+}

@@ -1,0 +1,69 @@
+# .gitignore for an Express / Node.js server
+# Common ignores for Node, logs, build artifacts, env files, editor files, and OS files
+
+# Node modules
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime data / PIDs
+pids/
+*.pid
+
+# Build output
+dist/
+build/
+out/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Environment files
+.env
+.env.*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache
+.cache/
+.parcel-cache/
+.next/
+.turbo/
+.vite/
+
+# Temporary files
+tmp/
+temp/
+
+# Uploads / runtime file storage (do not commit uploaded files)
+uploads/
+
+# PM2 / process manager
+pm2.pid
+pm2.log
+
+# IDEs and editors
+.vscode/
+!.vscode/extensions.json
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Misc
+.eslintcache
+.pnp
+.pnp.js
+
+# End of server .gitignore
