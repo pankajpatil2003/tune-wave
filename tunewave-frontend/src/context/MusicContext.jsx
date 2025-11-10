@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, useRef, useEffect, useMemo, useCallback } from 'react'; 
-import { getFullImageUrl } from '../utils/urlUtils'; 
+import React, { createContext, useContext, useState, useRef, useMemo, useCallback, useEffect } from 'react'; 
+// We keep ReactPlayer only for YouTube tracks
+import ReactPlayer from 'react-player'; 
+import { getFullImageUrl } from "../utils/urlUtils.js";
 
 // --- 1. Create Context ---
 const MusicContext = createContext();
@@ -7,11 +9,11 @@ const MusicContext = createContext();
 // --- 2. Custom Hook for consumption ---
 export const useMusic = () => useContext(MusicContext);
 
-// --- State for control modes (New additions) ---
+// --- State for control modes ---
 const REPEAT_MODES = {
     OFF: 'off',
     CONTEXT: 'context', // Repeat playlist
-    TRACK: 'track',     // Repeat current track
+    TRACK: 'track',     // Repeat current track
 };
 
 // ----------------------------------------------------------------------
@@ -23,18 +25,26 @@ export const MusicProvider = ({ children }) => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
+    // sourceType can be 'local', 'youtube', or 'external_url'
+    const [sourceType, setSourceType] = useState(null); 
+
+    // 🔊 Volume/Mute State 
+    const [volume, setVolume] = useState(0.8);
+    const [isMuted, setIsMuted] = useState(false);
 
     // Playlist/Control State
     const [playlist, setPlaylist] = useState([]);
     const [currentTrackIndex, setCurrentTrackIndex] = useState(-1); 
-    const [needsPlayAfterLoad, setNeedsPlayAfterLoad] = useState(false);
     const [isShuffling, setIsShuffling] = useState(false);
     const [repeatMode, setRepeatMode] = useState(REPEAT_MODES.OFF);
 
-    // Ref for the native HTML <audio> element
-    const audioRef = useRef(null);
+    // 🛑 DUAL PLAYER REFS: MP3/File Player ref changed to nativePlayerRef
+    const nativePlayerRef = useRef(null); 
+    const youtubePlayerRef = useRef(null);
+    // Dynamic ref to the CURRENT active player
+    const activePlayerRef = useRef(null); 
     
-    // --- Control Toggles ---
+    // --- Mode Toggles (No changes) ---
     const toggleShuffle = useCallback(() => {
         setIsShuffling(prev => !prev);
     }, []);
@@ -47,277 +57,342 @@ export const MusicProvider = ({ children }) => {
         });
     }, []);
 
+    // 🔊 Volume/Mute Controls (No changes)
+    const setAudioVolume = useCallback((newVolume) => {
+        setVolume(newVolume);
+        if (newVolume > 0) {
+            setIsMuted(false);
+        }
+    }, []);
 
-    // --- Core Playback Logic (Defined top-down for stable dependencies) ---
-
-    // Define navigation functions (playNext, playPrevious) first.
-    // They depend on stable playTrack (defined below), so we must pass them in the useEffect.
-    const playNext = useCallback(() => {
-        // Implementation moved below after playTrack is defined
-    }, [currentTrackIndex, playlist, repeatMode, isShuffling]);
-
-    const playPrevious = useCallback(() => {
-        // Implementation moved below after playTrack is defined
-    }, [currentTrackIndex, playlist]);
+    const toggleMute = useCallback(() => {
+        setIsMuted(prev => !prev);
+    }, []);
 
 
-    const loadAndPlayTrack = useCallback(async (trackData, index = -1) => {
-        if (!trackData || !trackData.filePath) return;
+    // --- Helper Functions (No changes) ---
 
-        const newAudioSrc = getFullImageUrl(trackData.filePath);
+    const getNextIndex = useCallback(() => {
+        if (playlist.length === 0) return -1;
         
+        if (repeatMode === REPEAT_MODES.TRACK) {
+            return currentTrackIndex; 
+        }
+        
+        if (isShuffling) {
+            let nextIndex;
+            do {
+                nextIndex = Math.floor(Math.random() * playlist.length);
+            } while (nextIndex === currentTrackIndex && playlist.length > 1);
+            return nextIndex;
+        }
+
+        let nextIndex = currentTrackIndex + 1;
+        if (nextIndex >= playlist.length) {
+            return repeatMode === REPEAT_MODES.CONTEXT ? 0 : -1;
+        }
+        return nextIndex;
+    }, [currentTrackIndex, playlist, isShuffling, repeatMode]);
+
+
+    const playTrackRef = useRef(null); 
+
+// ------------------------------------------------------------------
+    // 🥇 Load And Play Track (Source switching logic)
+    // ------------------------------------------------------------------
+    const loadAndPlayTrack = useCallback((trackData, index = -1) => {
+        if (!trackData) {
+            console.error("loadAndPlayTrack called with null trackData");
+            return;
+        }
+
+        let trackUrl = null;
+        const newSourceType = trackData.sourceType || (trackData.sourceUrl ? 'youtube' : 'local'); 
+        
+        console.log("--- Starting Track Load ---");
+        console.log("Resolved newSourceType:", newSourceType);
+
+        // 1. Resolve URL based on source type
+        if (newSourceType === 'youtube' && trackData.sourceUrl) {
+            trackUrl = trackData.sourceUrl;
+        } 
+        // 2. Handle generic external URL 
+        else if (newSourceType === 'external_url' && trackData.sourceUrl) {
+            trackUrl = trackData.sourceUrl;
+        }
+        // 3. Handle local file path (Uses the unencoded path)
+        else if (newSourceType === 'local' && trackData.filePath) {
+            trackUrl = getFullImageUrl(trackData.filePath); 
+        }
+
+        if (!trackUrl) {
+            console.error("Failed to load track: No valid source URL or file path found for type:", newSourceType, trackData);
+            setCurrentTrack(null);
+            setIsPlaying(false);
+            return; 
+        }
+        
+        console.log("Final Resolved Media URL (audioSrc):", trackUrl); 
+
+        // 🛑 CRITICAL: Stop playback before changing the URL/Player
+        setIsPlaying(false); 
+
+        // Set the new current track and source type
         setCurrentTrack({
             ...trackData,
-            audioSrc: newAudioSrc, 
-            cover_photo_url: getFullImageUrl(trackData.cover_photo),
+            audioSrc: trackUrl, // <-- This is the URL the native player uses!
+            cover_photo_url: trackData.cover_photo 
+                ? getFullImageUrl(trackData.cover_photo) 
+                : null,
         });
+        setSourceType(newSourceType); 
+
+        // Set the active player ref
+        // Now pointing to nativePlayerRef for local/external URLs
+        activePlayerRef.current = newSourceType === 'youtube' 
+            ? youtubePlayerRef.current 
+            : nativePlayerRef.current; // <---- POINTING TO NATIVE AUDIO REF
+
+        console.log("Active Player Set:", 
+            newSourceType === 'youtube' ? 'YouTube Player' : 'NATIVE Audio Player'); 
 
         if (index !== -1) {
             setCurrentTrackIndex(index);
         }
         
-        if (audioRef.current && audioRef.current.src !== newAudioSrc) {
-             audioRef.current.src = newAudioSrc;
-             audioRef.current.currentTime = 0; 
-             setNeedsPlayAfterLoad(true); 
-        } else if (audioRef.current) {
-             audioRef.current.currentTime = 0;
-             audioRef.current.play().catch(e => e.name !== "AbortError" && console.error("Error playing audio (same track):", e));
-             setIsPlaying(true);
-        }
-        
+        // Start playing the NEW track (Actual play command is handled in the useEffect hook for native player)
+        setIsPlaying(true); 
+        setCurrentTime(0);
+
     }, []);
 
+
+    // Memoized wrapper for loadAndPlayTrack (No changes)
     const playTrack = useCallback((trackData) => {
         const index = playlist.findIndex(t => (t._id || t.id) === (trackData._id || trackData.id));
         loadAndPlayTrack(trackData, index);
     }, [playlist, loadAndPlayTrack]);
 
-    // --- Finalized Navigation Logic (using playTrack) ---
-    const getNextIndex = useCallback(() => {
-        if (playlist.length === 0) return -1;
-        
-        // 1. Check for Repeat One (This is handled in handleAudioEnded, but good practice here too)
-        if (repeatMode === REPEAT_MODES.TRACK) {
-            return currentTrackIndex; // Stay on the current track
-        }
-        
-        // 2. Handle Shuffle
-        if (isShuffling) {
-            let nextIndex;
-            do {
-                nextIndex = Math.floor(Math.random() * playlist.length);
-            } while (nextIndex === currentTrackIndex && playlist.length > 1); // Avoid playing the same track again if possible
-            return nextIndex;
-        }
+    playTrackRef.current = playTrack;
 
-        // 3. Handle Linear (Next)
-        let nextIndex = currentTrackIndex + 1;
-        if (nextIndex >= playlist.length) {
-             // If repeating the context, loop back to the start (0). Otherwise, stop (-1 or current index).
-             return repeatMode === REPEAT_MODES.CONTEXT ? 0 : -1;
-        }
-        return nextIndex;
-    }, [currentTrackIndex, playlist, isShuffling, repeatMode]);
 
-    // Re-define playNext using getNextIndex
+    // ------------------------------------------------------------------
+    // ⏭️ Navigation Logic (Modified to handle native seek)
+    // ------------------------------------------------------------------
+
     const playNextStable = useCallback(() => {
         const nextIndex = getNextIndex();
+        
         if (nextIndex !== -1 && nextIndex !== currentTrackIndex) {
             const nextTrack = playlist[nextIndex];
             if (nextTrack) {
-                 playTrack(nextTrack); 
+                playTrackRef.current(nextTrack); 
             }
         } else if (nextIndex === currentTrackIndex && repeatMode === REPEAT_MODES.TRACK) {
-            // Explicitly reload/play for repeat track mode
-            loadAndPlayTrack(playlist[currentTrackIndex], currentTrackIndex);
+            if (activePlayerRef.current) { 
+                if (sourceType === 'youtube') activePlayerRef.current.seekTo(0);
+                else activePlayerRef.current.currentTime = 0; // Native audio seek
+                setIsPlaying(true);
+            }
         } else if (nextIndex === -1 && repeatMode === REPEAT_MODES.OFF) {
-            // Stop playback when playlist ends and repeat is off
             setIsPlaying(false);
+            setCurrentTrackIndex(-1);
+            setCurrentTime(0);
         }
-    }, [currentTrackIndex, playlist, playTrack, repeatMode, loadAndPlayTrack, getNextIndex]);
+    }, [currentTrackIndex, playlist, repeatMode, getNextIndex, sourceType]);
 
 
     const playPreviousStable = useCallback(() => {
-        if (playlist.length === 0) return;
+        if (playlist.length === 0 || currentTrackIndex === -1) return;
 
         let prevIndex = currentTrackIndex - 1;
         if (prevIndex < 0) {
-            // If repeating, wrap around to the end
             prevIndex = repeatMode !== REPEAT_MODES.OFF ? playlist.length - 1 : 0; 
         }
-
+        
         if (prevIndex !== currentTrackIndex) {
             const previousTrack = playlist[prevIndex];
-            playTrack(previousTrack);
+            playTrackRef.current(previousTrack);
         }
-    }, [currentTrackIndex, playlist, playTrack, repeatMode]);
+    }, [currentTrackIndex, playlist, repeatMode]);
 
-    // --- Audio Event Handlers (CRITICAL: Must be stable) ---
-    // The problem may be here: the effect needs to see the LATEST version of the handler.
-    
-    // ✅ CRITICAL FIX: We use the dependency array here to ensure that when `needsPlayAfterLoad` changes, 
-    // a new version of this function is created, ensuring the effect re-runs to attach the new logic.
-    const handleLoadedMetadata = useCallback(() => {
-        if (audioRef.current) {
-            setDuration(audioRef.current.duration); 
-            
-            if (needsPlayAfterLoad) {
-                audioRef.current.play().then(() => {
-                    setIsPlaying(true);
-                    setNeedsPlayAfterLoad(false); 
-                }).catch(e => {
-                    if (e.name !== "AbortError") {
-                        console.error("Error playing audio after metadata load:", e);
-                    }
-                    setIsPlaying(false);
-                    setNeedsPlayAfterLoad(false);
-                });
+
+    // ------------------------------------------------------------------
+    // --- Player Event Handlers (Modified for native audio) ---
+    // ------------------------------------------------------------------
+
+    // Handler must use the active ref for seeking
+    const handleSeek = useCallback((time) => {
+        if (activePlayerRef.current) { 
+            if (sourceType === 'youtube') {
+                activePlayerRef.current.seekTo(time, 'seconds');
+            } else {
+                activePlayerRef.current.currentTime = time; // Native audio seek
+            }
+            setCurrentTime(time);
+            if (!isPlaying) {
+                setIsPlaying(true); 
             }
         }
-    }, [needsPlayAfterLoad]); 
+    }, [isPlaying, sourceType]);
+    
+    // NATIVE AUDIO HANDLER: Called by <audio onLoadedMetadata>
+    const handleNativeReady = useCallback(() => {
+        if (nativePlayerRef.current) { 
+            const durationValue = nativePlayerRef.current.duration || 0;
+            console.log(`Native Player READY (local). Duration found:`, durationValue); 
+            setDuration(durationValue); 
+            // The actual .play() is handled by the useEffect for robust state syncing
+        }
+    }, []); 
 
-    // ✅ CRITICAL FIX: This updates the progress bar. It must be stable.
-    const handleTimeUpdate = useCallback(() => {
-        if (audioRef.current) {
-            // The audio element emits this event frequently (4-66 times per second).
-            setCurrentTime(audioRef.current.currentTime);
+    // REACTPLAYER HANDLER (for YouTube)
+    const handleYoutubeReady = useCallback(() => {
+        if (youtubePlayerRef.current) { 
+            const durationValue = youtubePlayerRef.current.getDuration() || 0;
+            console.log(`Player READY (youtube). Duration found:`, durationValue); 
+            setDuration(durationValue); 
         }
     }, []); 
     
-    // Handles track ending, checks repeat mode, then skips
+    // NATIVE AUDIO HANDLER: Called by <audio onTimeUpdate>
+    const handleNativeProgress = useCallback(() => {
+        // Only update if player is currently active AND it's a native source
+        if (isPlaying && (sourceType === 'local' || sourceType === 'external_url')) {
+            if (nativePlayerRef.current) {
+                setCurrentTime(nativePlayerRef.current.currentTime);
+            }
+        }
+    }, [isPlaying, sourceType]);
+
+    // REACTPLAYER HANDLER (for YouTube)
+    const handleYoutubeProgress = useCallback(state => {
+        // Only update if player is currently active AND it's YouTube
+        if (isPlaying && sourceType === 'youtube') { 
+            setCurrentTime(state.playedSeconds);
+        }
+    }, [isPlaying, sourceType]); 
+    
+    // Unified End Handler (Modified to handle native seek)
     const handleAudioEnded = useCallback(() => {
-        // If repeat track is on, re-seek to 0 and play again immediately
+        setIsPlaying(false); 
+        setCurrentTime(0);
         if (repeatMode === REPEAT_MODES.TRACK) {
-             if (audioRef.current) {
-                audioRef.current.currentTime = 0;
-                audioRef.current.play().catch(e => console.error("Error repeating track:", e));
+            if (activePlayerRef.current) { 
+                if (sourceType === 'youtube') activePlayerRef.current.seekTo(0);
+                else activePlayerRef.current.currentTime = 0; // Native seek
                 setIsPlaying(true);
-             }
+            }
         } else {
-            // For repeat context or off, go to the next track
-            setIsPlaying(false);
-            setCurrentTime(0);
             playNextStable(); 
         }
-    }, [playNextStable, repeatMode]); 
-
-
-    // --- Listener Attachment Effect (CRITICAL: Single and stable) ---
-    useEffect(() => {
-        const audio = audioRef.current;
-        if (!audio) {
-            // This case should ideally not happen if Audio() is called once on mount
-            const newAudio = new Audio();
-            audioRef.current = newAudio;
-        }
-
-        // We re-attach ALL listeners whenever any of the handler functions change.
-        // This is a common pattern to ensure the event listeners have access to the latest state/props.
-        const attachListeners = () => {
-             audioRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
-             audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
-             audioRef.current.addEventListener('ended', handleAudioEnded);
-        };
-        
-        const removeListeners = () => {
-             audioRef.current.removeEventListener('loadedmetadata', handleLoadedMetadata);
-             audioRef.current.removeEventListener('timeupdate', handleTimeUpdate);
-             audioRef.current.removeEventListener('ended', handleAudioEnded);
-        };
-
-        // Remove and re-attach to ensure we're using the latest callbacks
-        if (audioRef.current) {
-             removeListeners(); // Remove stale listeners
-             attachListeners(); // Add fresh listeners
-        }
-
-        // Final Cleanup: runs on unmount OR before the effect re-runs
-        return () => {
-            if (audioRef.current) {
-                removeListeners();
-                audioRef.current.pause();
-            }
-        };
-        
-    }, [handleLoadedMetadata, handleTimeUpdate, handleAudioEnded]); 
-    // The effect runs whenever any of the useCallback dependencies change (e.g., needsPlayAfterLoad for metadata)
-
-
-    // --- Exported Control Functions ---
-    const togglePlayPause = () => {
-        if (audioRef.current) {
-            if (isPlaying) {
-                audioRef.current.pause();
-            } else if (currentTrack) {
-                audioRef.current.play().catch(e => {
-                     if (e.name !== "AbortError") {
-                        console.error("Error playing audio on toggle:", e);
-                     }
-                });
-            }
-            // Only toggle isPlaying if we have a track OR if we are pausing
-            if (currentTrack || isPlaying) {
-                 setIsPlaying(prev => !prev);
-            }
-        }
-    };
-
-    const handleSeek = (time) => {
-        if (audioRef.current) {
-            audioRef.current.currentTime = time;
-            setCurrentTime(time);
-        }
-    };
+    }, [playNextStable, repeatMode, sourceType]); 
     
+    // --- Exported Control Functions (No changes) ---
+    const togglePlayPause = useCallback(() => {
+        if (currentTrack) {
+            setIsPlaying(prev => !prev);
+        }
+    }, [currentTrack]);
+    
+    
+    // ------------------------------------------------------------------
+    // 💡 NEW: EFFECT TO CONTROL NATIVE <AUDIO> STATE 
+    // This is necessary because <audio> doesn't automatically sync with React state changes
+    // ------------------------------------------------------------------
+    useEffect(() => {
+        const isNativeSource = sourceType === 'local' || sourceType === 'external_url';
+        const player = nativePlayerRef.current;
 
-    // --- Memoized Context Value ---
+        if (player && isNativeSource) {
+            player.volume = volume;
+            player.muted = isMuted;
+
+            if (isPlaying) {
+                // Use .play() with a catch to handle browser autoplay policies
+                player.play().catch(e => console.warn("Native Player Auto-play blocked (requires user interaction first):", e));
+            } else {
+                player.pause();
+            }
+        }
+    }, [isPlaying, volume, isMuted, sourceType]);
+
+
+    // ------------------------------------------------------------------
+    // --- Memoized Context Value (No changes) ---
+    // ------------------------------------------------------------------
     const value = useMemo(() => ({
-        // Core state
-        currentTrack,
-        isPlaying,
-        currentTime,
-        duration,
-        audioRef,
+        // State
+        currentTrack, isPlaying, currentTime, duration, volume, isMuted, 
+        playlist, currentTrackIndex, isShuffling, repeatMode, sourceType, 
         
         // Controls
-        togglePlayPause,
-        handleSeek,
+        togglePlayPause, handleSeek, 
         playTrack, 
         playNext: playNextStable, 
         playPrevious: playPreviousStable,
-
-        // Playlist State & Modes
-        setPlaylist,
-        playlist,
-        currentTrackIndex,
-        isShuffling,
-        toggleShuffle,
-        repeatMode,
-        toggleRepeat,
+        setVolume: setAudioVolume, 
+        toggleMute,
+        setPlaylist, toggleShuffle, toggleRepeat,
         
     }), [
-        // State dependencies (trigger consumers like MusicPlayer)
-        currentTrack, 
-        isPlaying,    
-        currentTime,  
-        duration,
-        playlist,
-        currentTrackIndex,
-        needsPlayAfterLoad, 
-        isShuffling,
-        repeatMode,
-        
-        // Function dependencies
-        togglePlayPause,
-        handleSeek,
-        playTrack,
-        setPlaylist,
-        playNextStable, 
-        playPreviousStable,
-        toggleShuffle,
-        toggleRepeat,
+        currentTrack, isPlaying, currentTime, duration, volume, isMuted, playlist,
+        currentTrackIndex, isShuffling, repeatMode, sourceType, togglePlayPause, handleSeek, 
+        playTrack, setAudioVolume, toggleMute, setPlaylist, playNextStable, 
+        playPreviousStable, toggleShuffle, toggleRepeat
     ]);
 
-    return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>; 
+    // Determine if the track type should be handled by the generic file player
+    const isLocalActive = sourceType === 'local' || sourceType === 'external_url';
+    // Use the track ID or URL as a key for forced remount
+    const playerKey = currentTrack?._id || currentTrack?.id || currentTrack?.audioSrc;
+
+
+    return (
+        <MusicContext.Provider value={value}>
+            {children}
+            {/* 🎧 DUAL PLAYER SYSTEM: Now using native <audio> for local files */}
+            <div style={{ display: 'none' }}>
+                
+                {/* 1. NATIVE AUDIO Player (Handles local AND external URLs) */}
+                {/* We only mount the <audio> tag if we have an active local/external source */}
+                {(isLocalActive && currentTrack?.audioSrc) && (
+                    <audio
+                        key={`native-${playerKey}`} // Force re-render when track changes
+                        ref={nativePlayerRef} 
+                        src={currentTrack.audioSrc} 
+                        // Native handlers replace ReactPlayer's
+                        onLoadedMetadata={handleNativeReady} 
+                        onTimeUpdate={handleNativeProgress} 
+                        onEnded={handleAudioEnded}
+                        onError={(e) => {
+                            console.error("Native Audio Player Failed to load:", e);
+                            setIsPlaying(false);
+                            setDuration(0);
+                        }}
+                        preload="auto"
+                    />
+                )}
+
+                {/* 2. YouTube Player (Uses ReactPlayer) */}
+                <ReactPlayer
+                    key={`youtube-${playerKey}`} 
+                    ref={youtubePlayerRef} 
+                    url={sourceType === 'youtube' ? currentTrack?.audioSrc : null} 
+                    playing={isPlaying && sourceType === 'youtube'} 
+                    volume={volume}
+                    muted={isMuted}
+                    // Use YouTube-specific handlers
+                    onReady={sourceType === 'youtube' ? handleYoutubeReady : undefined} 
+                    onProgress={sourceType === 'youtube' ? handleYoutubeProgress : undefined} 
+                    onEnded={sourceType === 'youtube' ? handleAudioEnded : undefined} 
+                    onError={(e, data) => {
+                        console.error("YouTube Player Failed to load:", e, data);
+                        setIsPlaying(false);
+                    }}
+                    config={{ youtube: { playerVars: { disablekb: 1 } } }}
+                />
+            </div>
+        </MusicContext.Provider>
+    );
 };

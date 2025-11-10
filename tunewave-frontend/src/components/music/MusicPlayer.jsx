@@ -1,4 +1,4 @@
-import React, { useState } from 'react'; 
+import React from 'react'; 
 import { 
     Play, 
     Pause, 
@@ -9,7 +9,6 @@ import {
     Volume2, 
     VolumeX 
 } from 'lucide-react';
-// ✅ Import the custom hook
 import { useMusic } from '../../context/MusicContext'; 
 
 /**
@@ -19,31 +18,33 @@ import { useMusic } from '../../context/MusicContext';
  * @returns {JSX.Element}
  */
 const MusicPlayer = ({ darkMode }) => {
-    // ✅ Updated hook usage to include the new playlist controls and modes
+    // Destructure ALL state and control functions from the centralized context
     const { 
         currentTrack, 
         isPlaying, 
+        
+        // --- Core Playback State (Used for progress bar) ---
         currentTime, 
         duration, 
+        
         togglePlayPause, 
         handleSeek,
-        audioRef, 
-        
-        // Skip functions
         playNext, 
         playPrevious,
 
-        // 🚀 NEW: Shuffle and Repeat State & Controls
+        // --- Volume and Mute States/Controls ---
+        volume,
+        isMuted,
+        setVolume,   
+        toggleMute,
+
+        // --- Shuffle and Repeat Controls ---
         isShuffling,
         toggleShuffle,
-        repeatMode, // 'off', 'context', 'track'
+        repeatMode, 
         toggleRepeat,
         
     } = useMusic();
-
-    // --- Playback State Hooks (Only volume remains local) ---
-    const [volume, setVolume] = useState(0.8); // 0.0 to 1.0
-    const [isMuted, setIsMuted] = useState(false);
 
     // --- Time Formatting Utility ---
     const formatTime = (seconds) => {
@@ -53,45 +54,35 @@ const MusicPlayer = ({ darkMode }) => {
         return `${minutes}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // --- Volume Control Logic ---
+    // Handler to update the volume state in context
     const handleVolumeChange = (e) => {
-        const newVolume = Number(e.target.value);
-        setVolume(newVolume);
-        if (audioRef.current) {
-            audioRef.current.volume = newVolume;
-            if (newVolume > 0) setIsMuted(false);
-        }
+        setVolume(Number(e.target.value)); 
+    };
+    
+    // Handler to toggle mute (added for completeness)
+    const handleMuteToggle = () => {
+        toggleMute();
     };
 
-    const handleMuteToggle = () => {
-        if (audioRef.current) {
-            const newMutedState = !isMuted;
-            setIsMuted(newMutedState);
-            audioRef.current.muted = newMutedState;
-        }
+
+    // Handler to seek using the progress slider
+    const handleSliderSeek = (e) => {
+        // CRITICAL: Convert the string value from the range input to a number
+        const time = Number(e.target.value);
+        handleSeek(time); 
     };
     
     // --- Style Helpers ---
     const isDark = darkMode;
     const textColor = isDark ? 'text-gray-300' : 'text-gray-800';
-    // Use a slightly different hover effect for better visibility on dark mode
     const controlButtonClass = `p-2 rounded-full transition-colors ${textColor} hover:bg-indigo-600/20`; 
     
-    // 🚀 NEW: Function to get button class based on state
+    // Function to get button class based on state
     const getActiveControlClass = (isActive) => 
         isActive 
             ? 'text-indigo-400' 
             : `${textColor}`;
 
-
-    // Handler to seek using the slider
-    const handleSliderSeek = (e) => {
-        const time = Number(e.target.value);
-        handleSeek(time);
-    };
-
-    // The progress percentage calculation is harmless, we can keep it
-    const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
     
     // Guard Clause: Render a minimal bar if no track is loaded
     if (!currentTrack) {
@@ -111,12 +102,22 @@ const MusicPlayer = ({ darkMode }) => {
     
     const { title, artist, cover_photo_url } = currentTrack;
     
-    // 🚀 NEW: Determine Repeat Icon
     const repeatIconColorClass = getActiveControlClass(repeatMode !== 'off');
-    const repeatIcon = repeatMode === 'track' 
-        ? <Repeat className="h-5 w-5" data-repeat-one /> // Use lucide's Repeat with a repeat-one indicator (for now, use a class or attribute)
-        : <Repeat className="h-5 w-5" />;
-
+    
+    // Custom wrapper for the repeat button to show the '1' indicator
+    const RepeatButton = () => (
+        <button 
+            onClick={toggleRepeat}
+            className={`${controlButtonClass} ${repeatIconColorClass} relative`} 
+            aria-label={`Repeat mode: ${repeatMode}`}
+        >
+            <Repeat className="h-5 w-5" />
+            {/* Display a small '1' when in repeat-track mode */}
+            {repeatMode === 'track' && (
+                <span className="absolute text-xs font-bold bottom-1 right-0 left-0" style={{ fontSize: '0.65rem' }}>1</span>
+            )}
+        </button>
+    );
 
     return (
         <div 
@@ -149,11 +150,11 @@ const MusicPlayer = ({ darkMode }) => {
                 
                 {/* Control Buttons */}
                 <div className="flex items-center space-x-6 mb-2">
-                    {/* 🚀 NEW: Shuffle Button Logic */}
+                    {/* Shuffle Button */}
                     <button 
                         onClick={toggleShuffle}
                         className={`${controlButtonClass} ${getActiveControlClass(isShuffling)}`} 
-                        aria-label="Shuffle"
+                        aria-label="Toggle Shuffle"
                     >
                         <Shuffle className="h-5 w-5" />
                     </button>
@@ -165,6 +166,7 @@ const MusicPlayer = ({ darkMode }) => {
                     >
                         <SkipBack className="h-6 w-6" />
                     </button>
+                    
                     <button 
                         onClick={togglePlayPause}
                         className={`p-3 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-lg`}
@@ -172,6 +174,7 @@ const MusicPlayer = ({ darkMode }) => {
                     >
                         {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current" />}
                     </button>
+                    
                     <button 
                         onClick={playNext} 
                         className={controlButtonClass} 
@@ -180,31 +183,19 @@ const MusicPlayer = ({ darkMode }) => {
                         <SkipForward className="h-6 w-6" />
                     </button>
                     
-                    {/* 🚀 NEW: Repeat Button Logic */}
-                    <button 
-                        onClick={toggleRepeat}
-                        className={`${controlButtonClass} ${repeatIconColorClass}`} 
-                        aria-label={`Repeat mode: ${repeatMode}`}
-                    >
-                        {/* Render the Repeat Icon based on the mode */}
-                        {repeatIcon}
-                        {/* Optional small indicator for Repeat One */}
-                        {repeatMode === 'track' && (
-                            <span className="absolute text-xs bottom-1 left-1/2 transform -translate-x-1/2">1</span>
-                        )}
-                    </button>
+                    <RepeatButton />
                 </div>
 
-                {/* Progress Bar */}
+                {/* Progress Bar (CRITICAL) */}
                 <div className="flex items-center w-full max-w-xl space-x-2 text-sm">
                     <span className={`${textColor} w-10 text-right`}>{formatTime(currentTime)}</span>
                     <input 
                         type="range"
                         min="0"
-                        // ✅ Use duration directly here
-                        max={duration || 0}
-                        // ✅ Use currentTime directly here
-                        value={currentTime || 0}
+                        // Ensure max is numerical
+                        max={duration ? Number(duration) : 0}
+                        // Ensure value is numerical and correctly bound to context state
+                        value={currentTime ? Number(currentTime) : 0} 
                         onChange={handleSliderSeek}
                         className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer dark:bg-gray-700" 
                     />
@@ -214,7 +205,11 @@ const MusicPlayer = ({ darkMode }) => {
 
             {/* 3. Volume Control (Right Side) */}
             <div className="flex items-center w-1/4 justify-end space-x-2 pr-4">
-                <button onClick={handleMuteToggle} className={controlButtonClass} aria-label={isMuted ? "Unmute" : "Mute"}>
+                <button 
+                    onClick={handleMuteToggle} 
+                    className={controlButtonClass} 
+                    aria-label={isMuted ? "Unmute" : "Mute"}
+                >
                     {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
                 </button>
                 <input
@@ -222,7 +217,9 @@ const MusicPlayer = ({ darkMode }) => {
                     min="0"
                     max="1"
                     step="0.01"
+                    // Use the volume state from context
                     value={isMuted ? 0 : volume}
+                    // Use the new context handler
                     onChange={handleVolumeChange}
                     className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm"
                     style={{
