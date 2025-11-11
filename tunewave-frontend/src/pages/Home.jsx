@@ -1,22 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Routes, Route } from 'react-router-dom';
-import useAuth from '../hooks/useAuth'; 
-import { fetchRecommendedTracks, fetchTrackDetails } from '../api/musicService'; 
+import useAuth from '../hooks/useAuth.jsx'; // Added .js extension
+import { fetchRecommendedTracks, fetchTrackDetails } from '../api/musicService.js'; // Added .js extension
 import { Disc3, MoreVertical, Upload, Loader2 } from 'lucide-react'; 
 
 // Utility and Context Imports
-import { getFullImageUrl } from '../utils/urlUtils'; 
-import { useMusic } from '../context/MusicContext'; // Correct import
+import { getFullImageUrl } from '../utils/urlUtils.js'; // Added .js extension
+import { useMusic } from '../context/MusicContext.jsx'; // Added .jsx extension
 
 // --- Import Modular Components ---
-import Header from '../components/common/Header'; 
-import Sidebar from '../components/music/Sidebar';
-import MusicPlayer from '../components/music/MusicPlayer';
-import UploadTrackModal from '../components/music/UploadTrackModal'; 
-
-// --- Import Pages (Used in Routes) ---
-import SearchPage from './Search'; 
-import LibraryPage from './Library';
+// ⚠️ REMOVED: Sidebar and MusicPlayer imports, as they are globally managed by PrivateAppLayout
+import Header from '../components/common/Header.jsx'; // Added .jsx extension
+import UploadTrackModal from '../components/music/UploadTrackModal.jsx'; // Added .jsx extension
+// ⚠️ REMOVED: Imports for SearchPage and LibraryPage, as they are managed by PrivateAppLayout's Routes
 
 
 // --- Placeholder Data (Keep outside components) ---
@@ -28,11 +23,10 @@ const placeholderTracks = [
 ];
 
 
-// --- TrackCard Component ---
+// --- TrackCard Component (Remains the same, just cleaning up imports) ---
 const TrackCard = React.memo(({ track, darkMode }) => {
     const textColor = darkMode ? 'text-gray-300' : 'text-gray-800';
     
-    // ✅ playTrack is used here to initiate playback
     const { playTrack } = useMusic(); 
     const [isLoading, setIsLoading] = useState(false);
 
@@ -101,11 +95,11 @@ const TrackCard = React.memo(({ track, darkMode }) => {
 });
 
 
-// --- HomePageContent Component (The main track listing) ---
-const HomePageContent = ({ darkMode }) => {
+// --- Main Home Component (This is now just the Page Content) ---
+const Home = ({ darkMode, setDarkMode }) => {
     const { user, isAuthReady } = useAuth();
     
-    // 🚀 CHANGE 1: Import setPlaylist from the context
+    // We only need the setPlaylist from context here to populate the global playlist
     const { setPlaylist } = useMusic();
     
     const username = user?.username;
@@ -123,9 +117,8 @@ const HomePageContent = ({ darkMode }) => {
             const data = await fetchRecommendedTracks(sort);
             const tracksData = Array.isArray(data) && data.length > 0 ? data : placeholderTracks;
             
-            setTracks(tracksData); // Update local state for rendering
-            // 🚀 CHANGE 2: Set the global playlist in MusicContext
-            setPlaylist(tracksData); 
+            setTracks(tracksData); 
+            setPlaylist(tracksData); // Set the global playlist in MusicContext
             
         } catch (err) {
             console.error("Failed to fetch recommended tracks:", err);
@@ -142,12 +135,11 @@ const HomePageContent = ({ darkMode }) => {
             setError(errorMessage);
             const fallbackTracks = placeholderTracks;
             setTracks(fallbackTracks); 
-            // 🚀 CHANGE 3: Set the global playlist with fallback tracks on error
-            setPlaylist(fallbackTracks);
+            setPlaylist(fallbackTracks); // Set the global playlist with fallback tracks on error
         } finally {
             setLoading(false);
         }
-    }, [setPlaylist]); // 🚀 CHANGE 4: Add setPlaylist to dependency array
+    }, [setPlaylist]);
 
     useEffect(() => {
         if (isAuthReady) {
@@ -156,7 +148,6 @@ const HomePageContent = ({ darkMode }) => {
     }, [isAuthReady, fetchTracks]); 
 
     const handleUploadSuccess = (newTrack) => {
-        // Prepend the new track to both the local state and the global playlist
         setTracks(prevTracks => [newTrack, ...prevTracks]);
         setPlaylist(prevPlaylist => [newTrack, ...prevPlaylist]); // Keep global playlist in sync
         setIsUploadModalOpen(false);
@@ -165,9 +156,16 @@ const HomePageContent = ({ darkMode }) => {
     const headerColor = darkMode ? 'text-white' : 'text-gray-900';
 
     return (
-        <div className={`p-8 w-full h-full overflow-y-auto ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+        // ⚠️ This is the main content area now, without the outer flex/h-screen/Sidebar/MusicPlayer
+        <div className={`p-8 w-full h-full ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}> 
             
-            <div className="flex justify-between items-center mb-2">
+            {/* The Header component is kept here for page-specific UI like the Dark Mode toggle */}
+            <Header 
+                darkMode={darkMode} 
+                setDarkMode={setDarkMode} 
+            />
+
+            <div className="flex justify-between items-center mb-2 mt-8"> {/* Adjusted margin-top for content below the Header */}
                 <h1 className={`text-4xl font-extrabold ${headerColor}`}>
                     Good Morning, **{username || 'Guest'}**!
                 </h1>
@@ -209,40 +207,6 @@ const HomePageContent = ({ darkMode }) => {
                 onClose={() => setIsUploadModalOpen(false)} 
                 onUploadSuccess={handleUploadSuccess}
             />
-        </div>
-    );
-};
-
-
-// --- Main Home Component (Application Shell with Router Logic) ---
-
-const Home = ({ darkMode, setDarkMode }) => {
-    const { logout } = useAuth(); 
-
-    return (
-        <div className="flex h-screen overflow-hidden">
-            
-            <Sidebar darkMode={darkMode} logout={logout} />
-
-            <div className="flex flex-col flex-grow overflow-hidden">
-                
-                <Header 
-                    darkMode={darkMode} 
-                    setDarkMode={setDarkMode} 
-                />
-
-                {/* The main view area where pages switch */}
-                <main className="flex-grow overflow-y-auto">
-                    <Routes>
-                        <Route path="/" element={<HomePageContent darkMode={darkMode} />} />
-                        <Route path="/search" element={<SearchPage darkMode={darkMode} />} />
-                        <Route path="/library" element={<LibraryPage darkMode={darkMode} />} />
-                        <Route path="*" element={<HomePageContent darkMode={darkMode} />} /> 
-                    </Routes>
-                </main>
-
-                <MusicPlayer darkMode={darkMode} />
-            </div>
         </div>
     );
 };

@@ -1,24 +1,31 @@
 import React, { createContext, useContext, useState, useRef, useMemo, useCallback, useEffect } from 'react'; 
 import { getFullImageUrl } from "../utils/urlUtils.js";
-// Assuming YouTubeIframePlayer component is imported/available where needed.
 import YouTubeIframePlayer from '../components/YouTubeIframePlayer'; 
 
-// --- 1. Create Context ---
+// Import the V3 API functions
+import { 
+    fetchUserPlaylistsV3, 
+    createPlaylistV3,
+    updatePlaylistV3,
+    toggleTrackInPlaylistV3,
+    fetchPlaylistDetailsV3,
+    deletePlaylistV3
+} from '../api/musicService.js';
+
+// Create Context
 const MusicContext = createContext();
 
-// --- 2. Custom Hook for consumption ---
+// Custom Hook for consumption
 export const useMusic = () => useContext(MusicContext);
 
-// --- State for control modes ---
+// State for control modes
 const REPEAT_MODES = {
     OFF: 'off',
-    CONTEXT: 'context', // Repeat playlist
-    TRACK: 'track',  // Repeat current track
+    CONTEXT: 'context',
+    TRACK: 'track',
 };
 
-// ----------------------------------------------------------------------
-// --- 3. Provider Component ---
-// ----------------------------------------------------------------------
+// Provider Component
 export const MusicProvider = ({ children }) => {
     // Core Playback State
     const [currentTrack, setCurrentTrack] = useState(null);
@@ -27,7 +34,7 @@ export const MusicProvider = ({ children }) => {
     const [duration, setDuration] = useState(0);
     const [sourceType, setSourceType] = useState(null); 
 
-    // 🔊 Volume/Mute State 
+    // Volume/Mute State 
     const [volume, setVolume] = useState(0.8);
     const [isMuted, setIsMuted] = useState(false);
 
@@ -37,18 +44,17 @@ export const MusicProvider = ({ children }) => {
     const [isShuffling, setIsShuffling] = useState(false);
     const [repeatMode, setRepeatMode] = useState(REPEAT_MODES.OFF);
 
-    // 🛑 DUAL PLAYER REFS
-    const nativePlayerRef = useRef(null);
-    // Reference for the active YouTube player object (set by YouTubeIframePlayer)
-    const youtubePlayerObjectRef = useRef(null);
-    
-    // 🟢 CRITICAL FIX: Initialize to false so the viewer doesn't open on startup.
-    const [isVideoViewerOpen, setIsVideoViewerOpen] = useState(false); 
-    
-    // 📺 VIDEO VIEWER SIZE STATE (NEW)
-    const [videoViewerSize, setVideoViewerSize] = useState('small'); // 'small' or 'medium'
+    // Playlist Management State
+    const [userPlaylists, setUserPlaylists] = useState([]);
+    const [isPlaylistsLoading, setIsPlaylistsLoading] = useState(false);
 
-    // --- Control Toggles & Helpers ---
+    // Dual Player Refs
+    const nativePlayerRef = useRef(null);
+    const youtubePlayerObjectRef = useRef(null);
+    const [isVideoViewerOpen, setIsVideoViewerOpen] = useState(false); 
+    const [videoViewerSize, setVideoViewerSize] = useState('small');
+
+    // Control Toggles & Helpers
     const toggleShuffle = useCallback(() => { setIsShuffling(prev => !prev); }, []);
     const toggleRepeat = useCallback(() => {
         setRepeatMode(prev => {
@@ -65,20 +71,15 @@ export const MusicProvider = ({ children }) => {
         }
     }, []);
     const toggleMute = useCallback(() => { setIsMuted(prev => !prev); }, []);
-    
-    // ------------------------------------------------------------------
-    // 🔄 Viewer Toggle & Ref Registration
-    // ------------------------------------------------------------------
+
+    // Viewer Toggle & Ref Registration
     const toggleVideoViewer = useCallback(() => {
         setIsVideoViewerOpen(prev => {
             const newState = !prev;
 
-            // If we are CLOSING the viewer (going from true to false):
-            // We seek the hidden player to the current time so it starts from the right spot
             if (!newState) {
                 const player = youtubePlayerObjectRef.current;
                 if (player && typeof player.seekTo === 'function') {
-                    // Check if player has the seekTo method (part of the YT API)
                     player.seekTo(currentTime, true);
                 }
             }
@@ -86,20 +87,17 @@ export const MusicProvider = ({ children }) => {
         });
     }, [currentTime]);
 
-    // 📺 NEW: Function to set the video viewer size
     const resizeVideoViewer = useCallback((size) => {
         if (size === 'small' || size === 'medium') {
             setVideoViewerSize(size);
         }
     }, []);
 
-    // ------------------------------------------------------------------
-    // 1. HELPER FUNCTIONS
-    // ------------------------------------------------------------------
+    // HELPER FUNCTIONS
     const getNextIndex = useCallback(() => {
         if (playlist.length === 0) return -1;
         if (repeatMode === REPEAT_MODES.TRACK) return currentTrackIndex; 
-        
+
         if (isShuffling) {
             let nextIndex;
             do {
@@ -114,12 +112,10 @@ export const MusicProvider = ({ children }) => {
         }
         return nextIndex;
     }, [currentTrackIndex, playlist, isShuffling, repeatMode]);
-    
-    // ------------------------------------------------------------------
-    // 2. PLAYER CONTROL FUNCTIONS
-    // ------------------------------------------------------------------
-    
-    // 🎯 SEEK Logic - Determines which player to seek
+
+    // PLAYER CONTROL FUNCTIONS
+
+    // SEEK Logic
     const handleSeek = useCallback((time) => {
         const player = sourceType === 'youtube'
             ? youtubePlayerObjectRef.current
@@ -127,10 +123,8 @@ export const MusicProvider = ({ children }) => {
 
         if (player) {
             if (sourceType === 'youtube') {
-                // Use a check for the method as the YT API object might be delayed
                 if (typeof player.seekTo === 'function') player.seekTo(time, true);
             } else if (player.currentTime !== undefined) {
-                // Native Audio element property
                 player.currentTime = time;
             }
             setCurrentTime(time);
@@ -139,25 +133,21 @@ export const MusicProvider = ({ children }) => {
             console.warn("Attempted to seek but no active player ref found.");
         }
     }, [isPlaying, sourceType]);
-    
-    // ------------------------------------------------------------------
-    // 3. NAVIGATION FUNCTIONS
-    // ------------------------------------------------------------------
+
+    // NAVIGATION FUNCTIONS
     const playTrackRef = useRef(null); 
-    
+
     const playNextStable = useCallback(() => {
         const nextIndex = getNextIndex();
-        
+
         if (nextIndex !== -1 && nextIndex !== currentTrackIndex) {
             const nextTrack = playlist[nextIndex];
             if (nextTrack) {
                 playTrackRef.current(nextTrack); 
             }
         } else if (nextIndex === currentTrackIndex && repeatMode === REPEAT_MODES.TRACK) {
-            // Seek to 0 for track repeat
             handleSeek(0); 
         } else if (nextIndex === -1 && repeatMode === REPEAT_MODES.OFF) {
-            // Stop playing at end of playlist
             setIsPlaying(false);
             setCurrentTrackIndex(-1);
             setCurrentTime(0);
@@ -171,18 +161,15 @@ export const MusicProvider = ({ children }) => {
         if (prevIndex < 0) {
             prevIndex = repeatMode !== REPEAT_MODES.OFF ? playlist.length - 1 : 0; 
         }
-        
+
         if (prevIndex !== currentTrackIndex) {
             const previousTrack = playlist[prevIndex];
             playTrackRef.current(previousTrack);
         }
     }, [currentTrackIndex, playlist, repeatMode]);
 
+    // EVENT HANDLERS
 
-    // ------------------------------------------------------------------
-    // 4. EVENT HANDLERS
-    // ------------------------------------------------------------------
-    
     // Unified End Handler 
     const handleAudioEnded = useCallback(() => {
         setIsPlaying(false); 
@@ -190,13 +177,13 @@ export const MusicProvider = ({ children }) => {
         playNextStable(); 
     }, [playNextStable]); 
 
-    // NATIVE AUDIO HANDLERS (Same)
+    // NATIVE AUDIO HANDLERS
     const handleNativeReady = useCallback(() => {
         if (nativePlayerRef.current) { 
             const player = nativePlayerRef.current;
             const durationValue = player.duration || 0;
             setDuration(durationValue); 
-            
+
             if (isPlaying) {
                 player.play().catch(e => console.warn("Native Player READY: Auto-play blocked:", e));
             }
@@ -211,9 +198,8 @@ export const MusicProvider = ({ children }) => {
         }
     }, [isPlaying, sourceType]);
 
-    // Unified handlers that the YouTube player component should call
+    // Unified handlers for YouTube player
     const setYoutubeCurrentTime = useCallback((time) => {
-        // This is correct: the YouTube player updates the global currentTime state
         if (sourceType === 'youtube') setCurrentTime(time);
     }, [sourceType]);
 
@@ -221,21 +207,17 @@ export const MusicProvider = ({ children }) => {
         if (sourceType === 'youtube') setDuration(d);
     }, [sourceType]);
 
-    // Function to set the YouTube API object ref
     const setYoutubePlayerObject = useCallback((player) => { 
         youtubePlayerObjectRef.current = player; 
     }, []);
 
-
-    // ------------------------------------------------------------------
-    // 5. LOAD AND PLAY LOGIC
-    // ------------------------------------------------------------------
+    // LOAD AND PLAY LOGIC
     const loadAndPlayTrack = useCallback((trackData, index = -1) => {
         if (!trackData) return;
 
         let trackUrl = null;
         const newSourceType = trackData.sourceType || (trackData.sourceUrl ? 'youtube' : 'local'); 
-        
+
         if (newSourceType === 'youtube' && trackData.sourceUrl) {
             trackUrl = trackData.sourceUrl;
         } else if (newSourceType === 'external_url' && trackData.sourceUrl) {
@@ -250,7 +232,7 @@ export const MusicProvider = ({ children }) => {
             setIsPlaying(false);
             return; 
         }
-        
+
         setIsPlaying(false); 
 
         setCurrentTrack(prevTrack => ({
@@ -261,18 +243,16 @@ export const MusicProvider = ({ children }) => {
                 : (prevTrack?.cover_photo_url || null),
         }));
         setSourceType(newSourceType); 
-        
-        // When a new YouTube track is played, automatically open the viewer
+
         setIsVideoViewerOpen(newSourceType === 'youtube'); 
         setCurrentTime(0);
-        setDuration(0); // Reset duration immediately
+        setDuration(0);
 
         if (index !== -1) {
             setCurrentTrackIndex(index);
         }
-        
-        setIsPlaying(true); 
 
+        setIsPlaying(true); 
     }, []);
 
     const playTrack = useCallback((trackData) => {
@@ -280,19 +260,120 @@ export const MusicProvider = ({ children }) => {
         loadAndPlayTrack(trackData, index);
     }, [playlist, loadAndPlayTrack]);
 
-    playTrackRef.current = playTrack; // Assign to ref after definition
-    
-    // --- Exported Control Functions ---
+    playTrackRef.current = playTrack;
+
+    // 🆕 NEW: Play a new queue of tracks
+    const playNewQueue = useCallback((tracks, startIndex = 0) => {
+        if (!tracks || tracks.length === 0) {
+            setPlaylist([]);
+            setCurrentTrackIndex(-1);
+            setCurrentTrack(null);
+            setIsPlaying(false);
+            return;
+        }
+
+        // Set the new playlist
+        setPlaylist(tracks);
+
+        // Load and play the track at startIndex
+        const trackToPlay = tracks[startIndex];
+        if (trackToPlay) {
+            loadAndPlayTrack(trackToPlay, startIndex);
+        }
+    }, [loadAndPlayTrack]);
+
+    // 🆕 NEW: Play a single track immediately
+    const playSingleTrack = useCallback((track) => {
+        if (!track) return;
+
+        // Create a queue with just this track
+        playNewQueue([track], 0);
+    }, [playNewQueue]);
+
+    // Exported Control Functions
     const togglePlayPause = useCallback(() => {
         if (currentTrack) {
             setIsPlaying(prev => !prev);
         }
     }, [currentTrack]);
-    
-    
-    // ------------------------------------------------------------------
-    // 💡 EFFECT TO CONTROL NATIVE <AUDIO> STATE (Same)
-    // ------------------------------------------------------------------
+
+    // PLAYLIST MANAGEMENT FUNCTIONS
+
+    const fetchUserPlaylists = useCallback(async () => {
+        setIsPlaylistsLoading(true);
+        try {
+            const data = await fetchUserPlaylistsV3();
+            setUserPlaylists(data.playlists || data); 
+            return data.playlists || data;
+        } catch (error) {
+            console.error("Failed to fetch user playlists:", error);
+            throw error;
+        } finally {
+            setIsPlaylistsLoading(false);
+        }
+    }, []);
+
+    const createPlaylist = useCallback(async (name, description = '', is_public = false) => {
+        try {
+            const newPlaylist = await createPlaylistV3(name, description, is_public);
+            setUserPlaylists(prev => [...prev, newPlaylist]);
+            return newPlaylist;
+        } catch (error) {
+            console.error("Failed to create playlist:", error);
+            throw error;
+        }
+    }, []);
+
+    const updatePlaylist = useCallback(async (playlistId, updates) => {
+        try {
+            const updatedPlaylist = await updatePlaylistV3(playlistId, updates);
+            setUserPlaylists(prev => prev.map(p => 
+                (p._id === playlistId || p.id === playlistId) 
+                    ? updatedPlaylist
+                    : p
+            ));
+            return updatedPlaylist;
+        } catch (error) {
+            console.error(`Failed to update playlist ${playlistId}:`, error);
+            throw error;
+        }
+    }, []);
+
+    const toggleTrackInPlaylist = useCallback(async (playlistId, trackId) => {
+        try {
+            const result = await toggleTrackInPlaylistV3(playlistId, trackId);
+            if (result.success || result.message) {
+                 fetchUserPlaylists();
+            }
+            return result.message;
+        } catch (error) {
+            console.error(`Failed to toggle track ${trackId} in playlist ${playlistId}:`, error);
+            throw error;
+        }
+    }, [fetchUserPlaylists]);
+
+    const fetchPlaylistDetails = useCallback(async (playlistId) => {
+        try {
+            const playlistDetails = await fetchPlaylistDetailsV3(playlistId);
+            return playlistDetails;
+        } catch (error) {
+            console.error(`Failed to fetch details for playlist ${playlistId}:`, error);
+            throw error;
+        }
+    }, []);
+
+    const deletePlaylist = useCallback(async (playlistId) => {
+        try {
+            const result = await deletePlaylistV3(playlistId);
+            setUserPlaylists(prev => prev.filter(p => p._id !== playlistId && p.id !== playlistId));
+            return result.message;
+        } catch (error) {
+            console.error(`Failed to delete playlist ${playlistId}:`, error);
+            throw error;
+        }
+    }, []);
+
+    // EFFECT TO CONTROL NATIVE <AUDIO> STATE
     useEffect(() => {
         const isNativeSource = sourceType === 'local' || sourceType === 'external_url';
         const player = nativePlayerRef.current;
@@ -311,67 +392,71 @@ export const MusicProvider = ({ children }) => {
         }
     }, [isPlaying, volume, isMuted, sourceType]);
 
-
-    // ------------------------------------------------------------------
-    // --- Memoized Context Value ---
-    // ------------------------------------------------------------------
+    // Memoized Context Value
     const value = useMemo(() => ({
         // State
         currentTrack, isPlaying, currentTime, duration, volume, isMuted, 
         playlist, currentTrackIndex, isShuffling, repeatMode, sourceType, 
-        isVideoViewerOpen, 
-        videoViewerSize, // <--- NEW STATE
-        
+        isVideoViewerOpen, videoViewerSize,
+
+        // Playlist State
+        userPlaylists, 
+        isPlaylistsLoading,
+
         // Controls
         togglePlayPause, handleSeek, playTrack, 
         playNext: playNextStable, playPrevious: playPreviousStable,
         setVolume: setAudioVolume, toggleMute, setPlaylist, toggleShuffle, toggleRepeat,
-        toggleVideoViewer, 
-        resizeVideoViewer, // <--- NEW FUNCTION
-        
-        // Handlers for the YouTube player component
+        toggleVideoViewer, resizeVideoViewer,
+
+        // 🆕 NEW: Queue Controls
+        playNewQueue,
+        playSingleTrack,
+
+        // Playlist Controls
+        fetchUserPlaylists,
+        createPlaylist,
+        updatePlaylist, 
+        deletePlaylist, 
+        toggleTrackInPlaylist,
+        fetchPlaylistDetails,
+
+        // YouTube Player Handlers
         setYoutubeCurrentTime, 
         setYoutubeDuration, 
-        // Function to set the YouTube API object ref
         setYoutubePlayerObject,
-        
+
     }), [
         currentTrack, isPlaying, currentTime, duration, volume, isMuted, playlist,
         currentTrackIndex, isShuffling, repeatMode, sourceType, isVideoViewerOpen,
         videoViewerSize,
+        userPlaylists, isPlaylistsLoading,
+        fetchUserPlaylists, createPlaylist, updatePlaylist, deletePlaylist, toggleTrackInPlaylist, fetchPlaylistDetails,
         togglePlayPause, handleSeek, playTrack, setAudioVolume, toggleMute, 
         setPlaylist, playNextStable, playPreviousStable, toggleShuffle, toggleRepeat,
         toggleVideoViewer, resizeVideoViewer, setYoutubeCurrentTime, setYoutubeDuration, 
-        setYoutubePlayerObject 
+        setYoutubePlayerObject, playNewQueue, playSingleTrack
     ]);
 
-    // Determine if the track type should be handled by the generic file player
     const isLocalActive = sourceType === 'local' || sourceType === 'external_url';
-    // Use the track ID or URL as a key for forced remount
     const playerKey = currentTrack?._id || currentTrack?.id || currentTrack?.audioSrc;
 
-    // -------------------------------------------------------------------
-    // Robust Helper to get video ID from various YouTube URL formats
-    // -------------------------------------------------------------------
     const getYoutubeVideoId = (url) => {
         if (!url) return null;
         let id = null;
 
-        // 1. Check for 'v=' parameter (Standard URL)
         let match = url.match(/[?&]v=([^&]+)/);
         if (match) {
             id = match[1];
         }
-        
-        // 2. Check for 'youtu.be/' (Share link)
+
         if (!id) {
             match = url.match(/youtu\.be\/([^?&]+)/);
             if (match) {
                 id = match[1];
             }
         }
-        
-        // 3. Check for 'embed/' (Embed link)
+
         if (!id) {
             match = url.match(/embed\/([^?&]+)/);
             if (match) {
@@ -379,21 +464,18 @@ export const MusicProvider = ({ children }) => {
             }
         }
 
-        // Sanitize the ID (remove potential trailing characters like timestamps or fragments)
         return id ? id.split(/[#?]/)[0] : null;
     };
-    
-    // Get the video ID to pass to the hidden player component
-    const youtubeVideoId = getYoutubeVideoId(currentTrack?.audioSrc);
 
+    const youtubeVideoId = getYoutubeVideoId(currentTrack?.audioSrc);
 
     return (
         <MusicContext.Provider value={value}>
             {children}
-            {/* 🎧 DUAL PLAYER SYSTEM: HIDDEN FOR PLAYBACK CONTROL */}
+            {/* DUAL PLAYER SYSTEM: HIDDEN FOR PLAYBACK CONTROL */}
             <div style={{ display: 'none' }}>
-                
-                {/* 1. NATIVE AUDIO Player (Handles local AND external URLs) */}
+
+                {/* NATIVE AUDIO Player */}
                 {(isLocalActive && currentTrack?.audioSrc) && (
                     <audio
                         key={`native-${playerKey}`} 
@@ -401,8 +483,6 @@ export const MusicProvider = ({ children }) => {
                         src={currentTrack.audioSrc} 
                         volume={volume} 
                         muted={isMuted}
-                        
-                        // Native handlers 
                         onLoadedMetadata={handleNativeReady} 
                         onTimeUpdate={handleNativeProgress} 
                         onEnded={handleAudioEnded}
@@ -415,21 +495,18 @@ export const MusicProvider = ({ children }) => {
                     />
                 )}
 
-                {/* 2. YouTube Hidden Player (Placeholder for Audio) */}
-                {/* Renders if it's a YouTube track AND the viewer is closed */}
+                {/* YouTube Hidden Player */}
                 {(sourceType === 'youtube' && !isVideoViewerOpen && youtubeVideoId) && (
                     <YouTubeIframePlayer 
-                        // CRITICAL: Dynamic key forces clean player remount on track change.
                         key={`youtube-hidden-${playerKey}`}
                         videoUrl={currentTrack.audioSrc}
-                        type="audio" // Renders a hidden/audio-only iframe
-                        // Pass essential context state and handlers to the hidden player
+                        type="audio"
                         isPlaying={isPlaying}
                         volume={volume}
                         isMuted={isMuted}
                         initialTime={currentTime}
                         setDuration={setYoutubeDuration}
-                        setCurrentTime={setYoutubeCurrentTime} // CRITICAL: This updates the global currentTime state
+                        setCurrentTime={setYoutubeCurrentTime}
                         setPlayerObject={setYoutubePlayerObject}
                         onEnded={playNextStable}
                     />
@@ -438,3 +515,5 @@ export const MusicProvider = ({ children }) => {
         </MusicContext.Provider>
     );
 };
+
+export default useMusic;

@@ -3,8 +3,9 @@
 const express = require('express');
 const router = express.Router();
 const Playlist = require('../models/Playlist');
-const Track = require('../models/Track'); // Need to validate track IDs
-const { protect } = require('../middleware/auth');
+const Track = require('../models/Track');
+const { protect } = require('../middleware/auth'); 
+const mongoose = require('mongoose'); // Needed for ID validation
 
 // ==========================================================
 //                   PLAYLIST API ENDPOINTS
@@ -15,7 +16,8 @@ const { protect } = require('../middleware/auth');
 // @access  Private
 router.post('/', protect, async (req, res) => {
     try {
-        const { name } = req.body;
+        // 🛠️ FIX: Include all fields from the model
+        const { name, description, is_public } = req.body; 
 
         if (!name) {
             return res.status(400).json({ msg: 'Playlist name is required.' });
@@ -23,8 +25,10 @@ router.post('/', protect, async (req, res) => {
 
         const newPlaylist = new Playlist({
             name,
+            description,
+            is_public: is_public !== undefined ? is_public : true, // Default to true
             user: req.user.id, // Assign the logged-in user as the owner
-            tracks: [], // Starts empty
+            tracks: [], 
         });
 
         const playlist = await newPlaylist.save();
@@ -35,20 +39,23 @@ router.post('/', protect, async (req, res) => {
     }
 });
 
-// @route   GET /api/playlists
+// @route   GET /api/playlists/my-playlists
 // @desc    Get all playlists owned by the logged-in user
 // @access  Private
-router.get('/', protect, async (req, res) => {
+// 🛠️ FIX: Renamed from '/' to '/my-playlists' for clarity and to prevent ambiguity
+router.get('/my-playlists', protect, async (req, res) => {
     try {
         const playlists = await Playlist.find({ user: req.user.id })
+            .select('-tracks -__v') // Exclude track content for efficiency in list view
             .sort({ createdAt: -1 });
 
         res.json(playlists);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error: Could not retrieve playlists.');
+        res.status(500).send('Server Error: Could not retrieve user playlists.');
     }
 });
+
 
 // @route   GET /api/playlists/:id
 // @desc    Get a single playlist and populate its tracks
@@ -62,7 +69,7 @@ router.get('/:id', protect, async (req, res) => {
         })
         .populate({
             path: 'tracks', // Populate the tracks array
-            select: 'title artist sourceType sourceUrl videoId filePath' // Select specific track fields
+            select: 'title artist sourceType sourceUrl videoId filePath cover_photo' // Added cover_photo
         });
 
         if (!playlist) {
@@ -79,99 +86,67 @@ router.get('/:id', protect, async (req, res) => {
     }
 });
 
+// @route   PUT /api/playlists/:id/tracks
+// @desc    TOGGLE: Add or Remove a track from a playlist
+// @access  Private (Owner only)
+// 🛠️ NEW/FIXED ROUTE: Replaces the ambiguous /add-track and /remove-track with proper RESTful ID-based toggle
+router.put('/:id/tracks', protect, async (req, res) => {
+    const { trackId } = req.body;
 
-// @route   PUT /api/playlists/add-track
-// @desc    Add a track to a playlist
-// @access  Private
-router.put('/add-track', protect, async (req, res) => {
-    const { playlistId, trackId } = req.body;
-
-    if (!playlistId || !trackId) {
-        return res.status(400).json({ msg: 'Playlist ID and Track ID are required.' });
+    if (!trackId || !mongoose.Types.ObjectId.isValid(trackId)) {
+        return res.status(400).json({ msg: 'Valid track ID is required.' });
     }
-    
-    try {
-        // 1. Validate track existence
-        const track = await Track.findById(trackId);
-        if (!track) {
-            return res.status(404).json({ msg: 'Track not found.' });
-        }
-
-        // 2. Find playlist and ensure the logged-in user is the owner
-        const playlist = await Playlist.findOne({ 
-            _id: playlistId, 
-            user: req.user.id 
-        });
-
-        if (!playlist) {
-            return res.status(404).json({ msg: 'Playlist not found or you are not the owner.' });
-        }
-
-        // 3. Prevent duplicate tracks (optional but recommended)
-        if (playlist.tracks.includes(trackId)) {
-            return res.status(400).json({ msg: 'Track already exists in this playlist.' });
-        }
-
-        // 4. Add the track ID and save
-        playlist.tracks.push(trackId);
-        await playlist.save();
-
-        // 5. Respond with the updated playlist (optional: populate tracks before responding)
-        const updatedPlaylist = await playlist.populate({
-            path: 'tracks',
-            select: 'title artist sourceType sourceUrl videoId filePath'
-        });
-
-        res.json(updatedPlaylist);
-
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error: Could not add track to playlist.');
-    }
-});
-
-
-// @route   PUT /api/playlists/remove-track
-// @desc    Remove a track from a playlist
-// @access  Private
-router.put('/remove-track', protect, async (req, res) => {
-    const { playlistId, trackId } = req.body;
 
     try {
-        // 1. Find playlist and ensure the logged-in user is the owner
-        const playlist = await Playlist.findOne({ 
-            _id: playlistId, 
-            user: req.user.id 
-        });
+        let playlist = await Playlist.findById(req.params.id);
 
         if (!playlist) {
-            return res.status(404).json({ msg: 'Playlist not found or you are not the owner.' });
+            return res.status(404).json({ msg: 'Playlist not found.' });
         }
 
-        // 2. Remove the track ID from the array
-        const initialLength = playlist.tracks.length;
-        playlist.tracks = playlist.tracks.filter(
-            (track) => track.toString() !== trackId
+        // Authorization Check: Only the owner can modify the playlist
+        if (playlist.user.toString() !== req.user.id) {
+            return res.status(401).json({ msg: 'Not authorized to modify this playlist.' });
+        }
+        
+        // Ensure the track actually exists before trying to add it
+        const trackExists = await Track.findById(trackId);
+        if (!trackExists) {
+            return res.status(404).json({ msg: 'Track does not exist.' });
+        }
+
+        const trackIndex = playlist.tracks.findIndex(
+            (track) => track.toString() === trackId
         );
-        
-        // Check if the track was actually removed
-        if (playlist.tracks.length === initialLength) {
-             return res.status(404).json({ msg: 'Track not found in this playlist.' });
+
+        let action;
+        if (trackIndex > -1) {
+            // Track is already in the playlist, so remove it
+            playlist.tracks.splice(trackIndex, 1);
+            action = 'removed';
+        } else {
+            // Track is not in the playlist, so add it
+            playlist.tracks.push(trackId);
+            action = 'added';
         }
 
         await playlist.save();
         
-        // 3. Respond with the updated playlist
+        // Populate and return the updated playlist for immediate UI refresh
         const updatedPlaylist = await playlist.populate({
-            path: 'tracks',
-            select: 'title artist sourceType sourceUrl videoId filePath'
+             path: 'tracks',
+             select: 'title artist sourceType sourceUrl videoId filePath cover_photo'
         });
 
-        res.json(updatedPlaylist);
+        res.json({ 
+            msg: `Track ${action} to playlist.`, 
+            isAdded: action === 'added', 
+            playlist: updatedPlaylist 
+        });
 
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error: Could not remove track from playlist.');
+        res.status(500).send('Server Error: Could not update playlist tracks.');
     }
 });
 
@@ -197,5 +172,49 @@ router.delete('/:id', protect, async (req, res) => {
     }
 });
 
+
+// backend/routes/playlists.js (Add this block)
+
+// @route   PUT /api/playlists/:id
+// @desc    Update playlist details (name, description, is_public)
+// @access  Private (Owner only)
+router.put('/:id', protect, async (req, res) => {
+    try {
+        const { name, description, is_public } = req.body;
+        const updates = {};
+
+        // 1. Prepare updates object
+        if (name) updates.name = name;
+        if (description !== undefined) updates.description = description; // Allow empty string
+        if (is_public !== undefined) updates.is_public = is_public;
+
+        // Ensure there is something to update
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ msg: 'No fields provided for update.' });
+        }
+
+        // 2. Find the playlist by ID and ensure the logged-in user is the owner
+        const playlist = await Playlist.findOneAndUpdate(
+            { _id: req.params.id, user: req.user.id },
+            { $set: updates },
+            { new: true, runValidators: true } // Return the updated document and run Mongoose schema validators
+        )
+        // Optionally populate tracks on return, or just return the updated details
+        .select('-__v -tracks'); 
+
+        if (!playlist) {
+            return res.status(404).json({ msg: 'Playlist not found or you are not authorized to modify it.' });
+        }
+
+        res.json(playlist);
+
+    } catch (err) {
+        console.error(err.message);
+        if (err.kind === 'ObjectId') {
+            return res.status(404).json({ msg: 'Invalid Playlist ID format.' });
+        }
+        res.status(500).send('Server Error: Could not update playlist.');
+    }
+});
 
 module.exports = router;

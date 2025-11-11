@@ -9,6 +9,8 @@ import {
     ChevronLeft, 
     ChevronRight 
 } from 'lucide-react';
+// 🆕 Import the new PlaylistSidebar component
+import PlaylistSidebar from './PlaylistSidebar.jsx'; 
 
 /**
  * Main navigation sidebar component for TuneWave.
@@ -26,7 +28,6 @@ const Sidebar = ({ darkMode, logout }) => {
     const toggleCollapse = () => setIsCollapsed(!isCollapsed);
 
     // Dynamic Tailwind Classes
-    // Ensure the non-collapsed width (w-64) matches the required space.
     const sidebarWidth = isCollapsed ? 'w-20' : 'w-64'; 
     const bgColor = darkMode ? 'bg-gray-800' : 'bg-white';
     const textColor = darkMode ? 'text-white' : 'text-gray-900';
@@ -37,10 +38,6 @@ const Sidebar = ({ darkMode, logout }) => {
     return (
         <nav 
             className={`
-                // 🚀 CRITICAL FIXES: 
-                // 1. Remove 'fixed' positioning.
-                // 2. Add 'flex-shrink-0' so it maintains its width in the flex parent.
-                // 3. Add 'h-full' to span the full height of the parent.
                 flex-shrink-0 
                 h-full
                 
@@ -76,8 +73,8 @@ const Sidebar = ({ darkMode, logout }) => {
             </div>
 
 
-            {/* Navigation Links */}
-            <ul className="flex flex-col space-y-2 flex-grow">
+            {/* Navigation Links (Home, Search, Library) */}
+            <ul className="flex flex-col space-y-2"> {/* Removed flex-grow here */}
                 {navItems.map((item) => (
                     <li key={item.name}>
                         <NavLink 
@@ -89,7 +86,7 @@ const Sidebar = ({ darkMode, logout }) => {
                                 font-medium
                                 ${isActive
                                     ? 'bg-indigo-600 text-white shadow-lg' 
-                                    : `${linkInactiveColor}` // Use the defined inactive color variable
+                                    : `${linkInactiveColor}` 
                                 }
                             `}
                         >
@@ -102,6 +99,14 @@ const Sidebar = ({ darkMode, logout }) => {
                 ))}
             </ul>
 
+            {/* 🆕 PLAYLIST SECTION */}
+            <div className="flex-grow overflow-y-auto"> {/* Added wrapper to allow playlist list to scroll */}
+                <PlaylistSidebar 
+                    isCollapsed={isCollapsed} 
+                    linkInactiveColor={linkInactiveColor}
+                />
+            </div>
+            
             {/* Logout Button */}
             <div className={`mt-auto pt-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                 <button

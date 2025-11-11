@@ -1,18 +1,22 @@
-import React, { useState, useMemo } from 'react'; 
+import React, { useState, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Disc3 } from 'lucide-react';
 
 // Authentication and Context
-import useAuth from './hooks/useAuth'; 
+import useAuth from './hooks/useAuth';
 import { MusicProvider } from './context/MusicContext';
-import VideoViewer from './components/VideoViewer'; // Already imported by you
 
 // Pages and Components
-import LoginPage from './pages/Auth/Login'; 
+import LoginPage from './pages/Auth/Login';
 import Home from './pages/Home';
+import Search from './pages/Search';
+import Library from './pages/Library';
+import PlaylistPage from './pages/Playlist'; // 🆕 NEW: Import PlaylistPage
+import Sidebar from './components/music/Sidebar';
+import MusicPlayer from './components/music/MusicPlayer';
+import VideoViewer from './components/VideoViewer';
 
-
-// --- PrivateRoute Component (Remains the same) ---
+// --- PrivateRoute Component ---
 const PrivateRoute = ({ children, darkMode }) => {
     const { isAuthenticated, isAuthReady } = useAuth();
 
@@ -28,28 +32,48 @@ const PrivateRoute = ({ children, darkMode }) => {
     return isAuthenticated ? children : <Navigate to="/login" replace />;
 };
 
+// --- Protected Layout with Nested Routes ---
+const PrivateAppLayout = ({ darkMode, setDarkMode }) => {
+    const { logout } = useAuth();
+    
+    return (
+        <div className="app-container flex h-screen overflow-hidden">
+            <Sidebar logout={logout} darkMode={darkMode} />
+            
+            <div className="flex flex-col flex-grow overflow-hidden">
+                <main className="flex-grow overflow-y-auto">
+                    <Routes>
+                        <Route path="/" element={<Home darkMode={darkMode} setDarkMode={setDarkMode} />} />
+                        <Route path="/search" element={<Search darkMode={darkMode} />} />
+                        <Route path="/library" element={<Library darkMode={darkMode} />} />
+                        
+                        {/* 🌟 NEW: Playlist Detail Route */}
+                        <Route 
+                            path="/playlist/:playlistId" 
+                            element={<PlaylistPage darkMode={darkMode} />} 
+                        />
+                        
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </main>
+            </div>
 
-// --- Main App Component (Root) ---
+            <VideoViewer />
+            <MusicPlayer darkMode={darkMode} />
+        </div>
+    );
+};
+
+// --- Main App Component ---
 const App = () => {
     const [darkMode, setDarkMode] = useState(true);
     const currentTheme = darkMode ? 'dark' : 'light';
     
-    // ✅ FIX: Memoize the element passed to the private route.
-    // This now renders the VideoViewer alongside the Home component.
-    const privateRouteElement = useMemo(() => (
+    const privateLayoutElement = useMemo(() => (
         <PrivateRoute darkMode={darkMode}>
-            {/* Use a Fragment to render multiple siblings inside the PrivateRoute */}
-            <React.Fragment>
-                {/* 1. VideoViewer: Renders the video if the current track is YouTube. 
-                  It manages its own position (e.g., fixed or absolute) via CSS.
-                */}
-                <VideoViewer /> 
-                
-                {/* 2. Home: The main application content */}
-                <Home darkMode={darkMode} setDarkMode={setDarkMode} /> 
-            </React.Fragment>
+            <PrivateAppLayout darkMode={darkMode} setDarkMode={setDarkMode} />
         </PrivateRoute>
-    ), [darkMode, setDarkMode]); 
+    ), [darkMode]);
     
     return (
         <div className={`${currentTheme}`} style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -60,11 +84,9 @@ const App = () => {
                     ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}
                 `}
             >
-                {/* MusicProvider must wrap all components that need context */}
                 <MusicProvider> 
                     <Router> 
                         <Routes>
-                            {/* Public Route: Login */}
                             <Route 
                                 path="/login" 
                                 element={
@@ -74,10 +96,9 @@ const App = () => {
                                 }
                             />
 
-                            {/* Private Routes: Use the memoized element */}
                             <Route 
-                                path="/*" // Catches all private paths
-                                element={privateRouteElement} 
+                                path="/*" 
+                                element={privateLayoutElement} 
                             />
                         </Routes>
                     </Router>
