@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react'; // ✅ Import useMemo
+import React, { useState, useMemo } from 'react'; 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Disc3 } from 'lucide-react';
 
 // Authentication and Context
 import useAuth from './hooks/useAuth'; 
 import { MusicProvider } from './context/MusicContext';
+import VideoViewer from './components/VideoViewer'; // Already imported by you
 
 // Pages and Components
 import LoginPage from './pages/Auth/Login'; 
@@ -34,13 +35,21 @@ const App = () => {
     const currentTheme = darkMode ? 'dark' : 'light';
     
     // ✅ FIX: Memoize the element passed to the private route.
-    // This ensures <Home> and <PrivateRoute> only re-render if darkMode changes.
+    // This now renders the VideoViewer alongside the Home component.
     const privateRouteElement = useMemo(() => (
         <PrivateRoute darkMode={darkMode}>
-            <Home darkMode={darkMode} setDarkMode={setDarkMode} /> 
+            {/* Use a Fragment to render multiple siblings inside the PrivateRoute */}
+            <React.Fragment>
+                {/* 1. VideoViewer: Renders the video if the current track is YouTube. 
+                  It manages its own position (e.g., fixed or absolute) via CSS.
+                */}
+                <VideoViewer /> 
+                
+                {/* 2. Home: The main application content */}
+                <Home darkMode={darkMode} setDarkMode={setDarkMode} /> 
+            </React.Fragment>
         </PrivateRoute>
     ), [darkMode, setDarkMode]); 
-    // setDarkMode is stable, so changes are only driven by the darkMode state.
     
     return (
         <div className={`${currentTheme}`} style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -51,6 +60,7 @@ const App = () => {
                     ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}
                 `}
             >
+                {/* MusicProvider must wrap all components that need context */}
                 <MusicProvider> 
                     <Router> 
                         <Routes>

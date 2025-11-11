@@ -67,3 +67,74 @@ button:focus-visible {
   }
 }
 
+
+.custom-range-slider {
+    /* Base track color (unfilled part) */
+    background: #6B7280; /* Tailwind gray-500/60 for track */
+    border-radius: 9999px; /* Rounded corners */
+    height: 4px; /* Track height */
+    overflow: hidden; /* Important for custom track fill */
+}
+
+/* -------------------- */
+/* Webkit (Chrome/Safari) */
+/* -------------------- */
+
+.custom-range-slider::-webkit-slider-runnable-track {
+    /* Uses a linear gradient trick to show the filled and unfilled parts */
+    background: linear-gradient(
+        to right,
+        #4F46E5 0%,         /* Indigo-600 color for filled part */
+        #4F46E5 var(--seek-progress),
+        #6B7280 var(--seek-progress),
+        #6B7280 100%
+    );
+    border-radius: 9999px;
+    height: 4px;
+}
+
+.custom-range-slider::-webkit-slider-thumb {
+    /* Thumb (the draggable circle) */
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #4F46E5; /* Indigo-600 color */
+    cursor: pointer;
+    margin-top: -4px; /* Center the thumb vertically */
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.2); /* Subtle glow on thumb */
+}
+
+/* -------------------- */
+/* Mozilla (Firefox) */
+/* -------------------- */
+
+.custom-range-slider::-moz-range-track {
+    background: #6B7280; /* Unfilled track color */
+    border-radius: 9999px;
+    height: 4px;
+}
+
+.custom-range-slider::-moz-range-thumb {
+    /* Thumb (the draggable circle) */
+    background: #4F46E5; /* Indigo-600 color */
+    border: none; /* Removes default border */
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    cursor: pointer;
+}
+
+/* Custom filled track for Firefox (More complex, requires a separate color for filled part) */
+/* You may need a library like 'react-range' or a polyfill for perfect cross-browser consistency */
+/* The key is the 'linear-gradient' in the webkit track above which Firefox doesn't support easily. */
+/* For simplicity with minimal CSS, we rely on the primary color for the thumb. */
+
+/* Focus state for accessibility */
+.custom-range-slider:focus {
+    outline: none; 
+}
+.custom-range-slider:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 6px rgba(79, 70, 229, 0.4);
+}

@@ -7,7 +7,8 @@ import {
     Shuffle, 
     Repeat, 
     Volume2, 
-    VolumeX 
+    VolumeX,
+    Youtube
 } from 'lucide-react';
 import { useMusic } from '../../context/MusicContext'; 
 
@@ -35,7 +36,7 @@ const MusicPlayer = ({ darkMode }) => {
         // --- Volume and Mute States/Controls ---
         volume,
         isMuted,
-        setVolume,   
+        setVolume,      
         toggleMute,
 
         // --- Shuffle and Repeat Controls ---
@@ -43,6 +44,13 @@ const MusicPlayer = ({ darkMode }) => {
         toggleShuffle,
         repeatMode, 
         toggleRepeat,
+        
+        // Source Type for conditional rendering
+        sourceType, 
+        
+        // --- NEW: Video Viewer Control ---
+        isVideoViewerOpen, // Use this for conditional styling (optional, but good practice)
+        toggleVideoViewer, 
         
     } = useMusic();
 
@@ -90,8 +98,9 @@ const MusicPlayer = ({ darkMode }) => {
             <div 
                 className={`
                     flex items-center justify-center 
-                    h-16 p-4 
+                    h-24 p-4 
                     shadow-2xl z-20 
+                    fixed bottom-0 left-0 right-0
                     ${isDark ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200'}
                 `}
             >
@@ -104,6 +113,9 @@ const MusicPlayer = ({ darkMode }) => {
     
     const repeatIconColorClass = getActiveControlClass(repeatMode !== 'off');
     
+    // Check if the current track is a YouTube video
+    const isYoutube = sourceType === 'youtube';
+
     // Custom wrapper for the repeat button to show the '1' indicator
     const RepeatButton = () => (
         <button 
@@ -119,27 +131,57 @@ const MusicPlayer = ({ darkMode }) => {
         </button>
     );
 
+    // Dynamic style for the Track Info section when it's clickable
+    const trackInfoClass = `flex items-center w-1/4 min-w-48 ${
+        isYoutube ? 'cursor-pointer hover:bg-gray-700/50 p-2 rounded-lg -m-2 transition-colors' : ''
+    }`;
+
+    // Handler for clicking the track info area to toggle the video viewer
+    const handleTrackInfoClick = () => {
+        if (isYoutube) {
+            toggleVideoViewer();
+        }
+    };
+    
+
     return (
         <div 
             className={`
                 flex items-center justify-between 
                 h-24 p-4 
                 shadow-2xl z-20 
+                fixed bottom-0 left-0 right-0
                 ${isDark ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200'}
             `}
         >
-            {/* 1. Track Info (Left Side) */}
-            <div className="flex items-center w-1/4 min-w-48">
-                <img 
-                    src={cover_photo_url || '/assets/images/placeholder_album.jpg'} 
-                    alt="Album Art"
-                    className="w-14 h-14 rounded-md mr-3 object-cover"
-                />
-                <div>
-                    <div className={`text-base font-semibold truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            {/* 1. Track Info (Left Side) - Clickable to toggle VideoViewer */}
+            <div 
+                className={trackInfoClass} 
+                onClick={handleTrackInfoClick}
+            >
+                
+                {/* CONDITIONAL RENDERING for Cover Art / Video Placeholder */}
+                {isYoutube ? (
+                    // YouTube Video Placeholder
+                    <div className="w-14 h-14 rounded-md mr-3 flex items-center justify-center bg-red-600 text-white shadow-md relative">
+                        <Youtube className="h-8 w-8 fill-current" />
+                        {/* Optional: Indicator for video viewer state */}
+                        <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full ${isVideoViewerOpen ? 'bg-green-400' : 'bg-yellow-400'} border-2 ${isDark ? 'border-gray-900' : 'border-white'}`} title={isVideoViewerOpen ? "Video viewer open" : "Playing in background"}></div>
+                    </div>
+                ) : (
+                    // Standard Cover Art
+                    <img 
+                        src={cover_photo_url || '/assets/images/placeholder_album.jpg'} 
+                        alt="Album Art"
+                        className="w-14 h-14 rounded-md mr-3 object-cover shadow-md"
+                    />
+                )}
+                
+                <div className='truncate'>
+                    <div className={`text-base font-semibold truncate ${isDark ? 'text-white' : 'text-gray-900'}`} title={title}>
                         {title}
                     </div>
-                    <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <div className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`} title={artist}>
                         {artist}
                     </div>
                 </div>
@@ -197,7 +239,14 @@ const MusicPlayer = ({ darkMode }) => {
                         // Ensure value is numerical and correctly bound to context state
                         value={currentTime ? Number(currentTime) : 0} 
                         onChange={handleSliderSeek}
-                        className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer dark:bg-gray-700" 
+                        className="w-full h-1 bg-indigo-600 rounded-lg appearance-none cursor-pointer range-lg" 
+                        style={{
+                            // Custom style to show progress within the range slider
+                            backgroundSize: `${(currentTime / duration) * 100}% 100%`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundColor: isDark ? '#4b5563' : '#d1d5db', // bg-gray-600 or bg-gray-300
+                            backgroundImage: 'linear-gradient(to right, #4f46e5, #4f46e5)', // bg-indigo-600
+                        }}
                     />
                     <span className={`${textColor} w-10 text-left`}>{formatTime(duration)}</span>
                 </div>
@@ -221,10 +270,13 @@ const MusicPlayer = ({ darkMode }) => {
                     value={isMuted ? 0 : volume}
                     // Use the new context handler
                     onChange={handleVolumeChange}
-                    className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm"
+                    className="w-24 h-1 bg-indigo-600 rounded-lg appearance-none cursor-pointer range-sm"
                     style={{
-                        '--track-color': isDark ? '#4F46E5' : '#4338CA',
-                        '--thumb-color': 'white', 
+                        // Custom style to show volume progress
+                        backgroundSize: `${isMuted ? 0 : volume * 100}% 100%`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundColor: isDark ? '#4b5563' : '#d1d5db', // bg-gray-600 or bg-gray-300
+                        backgroundImage: 'linear-gradient(to right, #4f46e5, #4f46e5)', // bg-indigo-600
                     }}
                 />
             </div>
