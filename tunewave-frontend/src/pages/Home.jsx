@@ -1,17 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import useAuth from '../hooks/useAuth.jsx'; // Added .js extension
-import { fetchRecommendedTracks, fetchTrackDetails } from '../api/musicService.js'; // Added .js extension
+import useAuth from '../hooks/useAuth.jsx'; 
+import { fetchRecommendedTracks, fetchTrackDetails } from '../api/musicService.js'; 
 import { Disc3, MoreVertical, Upload, Loader2 } from 'lucide-react'; 
-
-// Utility and Context Imports
-import { getFullImageUrl } from '../utils/urlUtils.js'; // Added .js extension
-import { useMusic } from '../context/MusicContext.jsx'; // Added .jsx extension
+import { getFullImageUrl } from '../utils/urlUtils.js'; 
+import { useMusic } from '../context/MusicContext.jsx'; 
 
 // --- Import Modular Components ---
-// ⚠️ REMOVED: Sidebar and MusicPlayer imports, as they are globally managed by PrivateAppLayout
-import Header from '../components/common/Header.jsx'; // Added .jsx extension
-import UploadTrackModal from '../components/music/UploadTrackModal.jsx'; // Added .jsx extension
-// ⚠️ REMOVED: Imports for SearchPage and LibraryPage, as they are managed by PrivateAppLayout's Routes
+import Header from '../components/common/Header.jsx'; 
+import UploadTrackModal from '../components/music/UploadTrackModal.jsx';
 
 
 // --- Placeholder Data (Keep outside components) ---
@@ -99,7 +95,6 @@ const TrackCard = React.memo(({ track, darkMode }) => {
 const Home = ({ darkMode, setDarkMode }) => {
     const { user, isAuthReady } = useAuth();
     
-    // We only need the setPlaylist from context here to populate the global playlist
     const { setPlaylist } = useMusic();
     
     const username = user?.username;
@@ -167,7 +162,7 @@ const Home = ({ darkMode, setDarkMode }) => {
 
             <div className="flex justify-between items-center mb-2 mt-8"> {/* Adjusted margin-top for content below the Header */}
                 <h1 className={`text-4xl font-extrabold ${headerColor}`}>
-                    Good Morning, **{username || 'Guest'}**!
+                    Good Night, {username || 'Guest'}!
                 </h1>
                 
                 <button 
@@ -181,7 +176,7 @@ const Home = ({ darkMode, setDarkMode }) => {
             </div>
             
             <p className={`text-lg mb-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                Start your day with these personalized recommendations.
+                End your day with these personalized recommendations.
             </p>
             
             {loading ? (

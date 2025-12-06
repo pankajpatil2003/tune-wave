@@ -100,7 +100,7 @@ const MusicPlayer = ({ darkMode }) => {
                     flex items-center justify-center 
                     h-24 p-4 
                     shadow-2xl z-20 
-                    fixed bottom-0 left-0 right-0
+                    w-full
                     ${isDark ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200'}
                 `}
             >
@@ -150,7 +150,7 @@ const MusicPlayer = ({ darkMode }) => {
                 flex items-center justify-between 
                 h-24 p-4 
                 shadow-2xl z-20 
-                fixed bottom-0 left-0 right-0
+                w-full
                 ${isDark ? 'bg-gray-900 border-t border-gray-700' : 'bg-white border-t border-gray-200'}
             `}
         >

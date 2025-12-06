@@ -41,7 +41,7 @@ const PrivateAppLayout = ({ darkMode, setDarkMode }) => {
             <Sidebar logout={logout} darkMode={darkMode} />
             
             <div className="flex flex-col flex-grow overflow-hidden">
-                <main className="flex-grow overflow-y-auto">
+                <main className="flex-grow overflow-y-auto pb-24">
                     <Routes>
                         <Route path="/" element={<Home darkMode={darkMode} setDarkMode={setDarkMode} />} />
                         <Route path="/search" element={<Search darkMode={darkMode} />} />
@@ -56,10 +56,11 @@ const PrivateAppLayout = ({ darkMode, setDarkMode }) => {
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </main>
+                <div className="shrink-0">
+                <VideoViewer />
+                <MusicPlayer darkMode={darkMode} />
+                </div>
             </div>
-
-            <VideoViewer />
-            <MusicPlayer darkMode={darkMode} />
         </div>
     );
 };

@@ -18,7 +18,7 @@ const getAuthToken = () => {
 export const getToken = getAuthToken;
 
 // ----------------------------------------------------------------------
-// 🔑 CENTRAL API REQUEST UTILITY (DO NOT CHANGE - It's perfect)
+// 🔑 CENTRAL API REQUEST UTILITY ( It's perfect)
 // ----------------------------------------------------------------------
 
 /**
@@ -166,7 +166,6 @@ export const createPlaylistV3 = async (name, description = '', is_public = false
  * V3: Updates a playlist's details (PUT /api/playlists/:id).
  */
 export const updatePlaylistV3 = async (playlistId, updates) => {
-    // updates should be { name?: string, description?: string, is_public?: boolean }
     return apiRequest(`/playlists/${playlistId}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
@@ -184,16 +183,7 @@ export const toggleTrackInPlaylistV3 = async (playlistId, trackId) => {
     });
 };
 
-/**
- * V3: Adds a track to a playlist (POST /api/playlists/:id/tracks).
- * 🆕 NEW: Uses the central apiRequest utility.
- */
-// export const addTrackToPlaylistV3 = async (playlistId, trackId) => {
-//     return apiRequest(`/playlists/${playlistId}/tracks`, {
-//         method: 'POST',
-//         body: JSON.stringify({ trackId }),
-//     });
-// };
+
 
 /**
  * V3: Fetches full playlist details, including populated tracks (GET /api/playlists/:id).
@@ -219,7 +209,6 @@ export const deletePlaylistV3 = async (playlistId) => {
 
 // ----------------------------------------------------------------------
 // ORIGINAL TRACK API FUNCTIONS (Keep for backward compatibility)
-// NOTE: These functions are kept EXACTLY as provided by the user.
 // ----------------------------------------------------------------------
 
 /**
@@ -235,7 +224,6 @@ export const uploadTrack = async (trackData) => {
         throw new Error("Authentication required to upload a track.");
     }
 
-    // Determine if the incoming data is FormData (Local File Upload) or a JSON object (URL Submission)
     const isLocalFileUpload = trackData instanceof FormData;
 
     let headers = {
@@ -248,7 +236,6 @@ export const uploadTrack = async (trackData) => {
     if (isLocalFileUpload) {
         // Case 1: Local File Upload (FormData)
         body = trackData;
-        // DO NOT set Content-Type: 'multipart/form-data' here. The browser handles it.
     } else {
         // Case 2: External URL or YouTube (JSON)
         headers['Content-Type'] = 'application/json';
@@ -284,6 +271,7 @@ export const uploadTrack = async (trackData) => {
  * @param {string} [sortBy='recently_added'] - The sorting parameter (alphabetical, recently_added, recently_listened).
  * @returns {Promise<Array>} A promise that resolves to an array of track objects.
  */
+
 export const fetchRecommendedTracks = async (sortBy = 'recently_added') => {
     const token = localStorage.getItem('authToken');
 
@@ -433,7 +421,6 @@ export const fetchTrackDetails = async (trackId) => {
 
 // ----------------------------------------------------------------------
 // ORIGINAL PLAYLIST API FUNCTIONS (Keep for backward compatibility)
-// NOTE: These functions are kept EXACTLY as provided by the user.
 // ----------------------------------------------------------------------
 
 export const fetchUserPlaylists = async () => {
@@ -518,7 +505,7 @@ export const addTrackToPlaylistV3 = async (playlistId, trackId) => {
 
     try {
         const response = await fetch(url, {
-            // 🛑 FIX IS HERE: Change method from 'POST' to 'PUT'
+            
             method: 'PUT',
             headers: {
                 'Authorization': `Bearer ${token}`,
