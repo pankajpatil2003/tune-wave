@@ -1,8 +1,6 @@
-// backend/routes/auth.js
-
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Import the User model
+const User = require('../models/User');
 
 const router = express.Router();
 

@@ -1,5 +1,3 @@
-// backend/models/Track.js
-
 const mongoose = require('mongoose');
 
 const trackSchema = new mongoose.Schema({

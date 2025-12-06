@@ -1,5 +1,3 @@
-// backend/models/Playlist.js
-
 const mongoose = require('mongoose');
 
 const PlaylistSchema = new mongoose.Schema({

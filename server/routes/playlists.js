@@ -1,11 +1,9 @@
-// backend/routes/playlists.js
-
 const express = require('express');
 const router = express.Router();
 const Playlist = require('../models/Playlist');
 const Track = require('../models/Track');
 const { protect } = require('../middleware/auth'); 
-const mongoose = require('mongoose'); // Needed for ID validation
+const mongoose = require('mongoose'); 
 
 // ==========================================================
 //                   PLAYLIST API ENDPOINTS

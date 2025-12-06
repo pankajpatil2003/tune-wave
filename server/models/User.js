@@ -1,5 +1,3 @@
-// backend/models/User.js (Updated)
-
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -13,7 +11,7 @@ const userSchema = new mongoose.Schema({
   email: {
     type: String,
     required: [true, 'Please add an email'],
-    unique: true, // <--- EMAIL IS ALREADY UNIQUE HERE
+    unique: true, 
     match: [
       /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
       'Please fill a valid email address'

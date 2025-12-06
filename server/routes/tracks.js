@@ -1,12 +1,10 @@
-// backend/routes/tracks.js
-
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs/promises');
 const Track = require('../models/Track');
-const { protect } = require('../middleware/auth'); // Import the Auth Middleware
+const { protect } = require('../middleware/auth'); 
 const { parseFile } = require('music-metadata'); // Import music-metadata for ID3 tag extraction
 
 // --- Configuration ---
