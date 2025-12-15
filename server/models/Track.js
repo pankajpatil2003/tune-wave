@@ -19,7 +19,7 @@ const trackSchema = new mongoose.Schema({
   },
   cover_photo: { 
     type: String,
-    default: '/images/default_cover.png' // Default placeholder image
+    //default: '/images/default_cover.png' // Default placeholder image
   },
   recently_listened: { 
           type: Date,

@@ -19,15 +19,19 @@ const protect = async (req, res, next) => {
       // Attach user data to the request object (excluding the password)
       req.user = await User.findById(decoded.id).select('-password');
       
+      // 🆕 Additional check: ensure user still exists in database
+      if (!req.user) {
+        return res.status(401).json({ message: 'User not found, token invalid' });
+      }
+      
       next(); // Proceed to the next middleware or the route handler
     } catch (error) {
-      console.error(error);
-      return res.status(401).json({ msg: 'Not authorized, token failed' });
+      console.error('Token verification failed:', error);
+      return res.status(401).json({ message: 'Not authorized, token failed' });
     }
-  }
-
-  if (!token) {
-    return res.status(401).json({ msg: 'Not authorized, no token' });
+  } else {
+    // 🆕 Fixed: This only runs if no Authorization header exists
+    return res.status(401).json({ message: 'Not authorized, no token' });
   }
 };
 

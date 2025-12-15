@@ -176,13 +176,20 @@ export const updatePlaylistV3 = async (playlistId, updates) => {
  * V3: Toggles a track's presence in a playlist (PUT /api/playlists/:id/tracks).
  * The API handles add/remove based on the track's current presence.
  */
-export const toggleTrackInPlaylistV3 = async (playlistId, trackId) => {
-    return apiRequest(`/playlists/${playlistId}/tracks`, {
-        method: 'PUT',
-        body: JSON.stringify({ trackId }), 
-    });
-};
 
+// toggle add/remove a track in playlist (your existing V3)
+export const toggleTrackInPlaylistV3 = (playlistId, trackId) =>
+  apiRequest(`/playlists/${playlistId}/tracks`, {
+    method: 'PUT',
+    body: JSON.stringify({ trackId }),
+  });
+
+// delete playlist
+/**
+ * V3: Deletes a playlist (DELETE /api/playlists/:id).
+ */
+export const deletePlaylistV3 = (playlistId) =>
+  apiRequest(`/playlists/${playlistId}`, { method: 'DELETE' });
 
 
 /**
@@ -198,14 +205,6 @@ export const fetchPlaylistDetailsV3 = async (playlistId) => {
     });
 };
 
-/**
- * V3: Deletes a playlist (DELETE /api/playlists/:id).
- */
-export const deletePlaylistV3 = async (playlistId) => {
-    return apiRequest(`/playlists/${playlistId}`, {
-        method: 'DELETE',
-    });
-};
 
 // ----------------------------------------------------------------------
 // ORIGINAL TRACK API FUNCTIONS (Keep for backward compatibility)
@@ -536,4 +535,27 @@ export const addTrackToPlaylistV3 = async (playlistId, trackId) => {
         console.error("API error in addTrackToPlaylist:", error);
         throw error;
     }
+};
+
+/**
+ * V2: Deletes a track by ID (DELETE /api/tracks/:id).
+ */
+export const deleteTrackV2 = async (trackId) => {
+    return apiRequest(`/tracks/${trackId}`, {
+        method: 'DELETE',
+    });
+};
+
+/**
+ * V2: Updates track metadata (PUT /api/tracks/:id).
+ */
+export const updateTrackV2 = async (trackId, updates) => {
+    return apiRequest(`/tracks/${trackId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+    });
+};
+
+export const fetchPlaylistsByTrack = (trackId) => {
+  return apiRequest(`/playlists/by-track/${trackId}`);
 };

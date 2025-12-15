@@ -18,19 +18,40 @@ export const register = async (username, email, password) => {
         const data = await response.json();
         
         if (!response.ok) {
-            // Return failure object with the error message
+            // 🆕 Extract detailed error message from various backend formats
+            let errorMessage = 'Registration failed. Please try again with different details.';
+            
+            if (data.message) {
+                errorMessage = data.message;
+            } else if (data.error) {
+                errorMessage = data.error;
+            } else if (data.errors) {
+                // Handle validation errors object format
+                // Example: { errors: { password: { message: "..." }, email: { message: "..." } } }
+                if (typeof data.errors === 'object') {
+                    const messages = Object.values(data.errors)
+                        .map(err => err.message || err)
+                        .filter(Boolean);
+                    if (messages.length > 0) {
+                        errorMessage = messages.join('. ');
+                    }
+                } else if (typeof data.errors === 'string') {
+                    errorMessage = data.errors;
+                }
+            }
+            
             return { 
                 success: false, 
-                error: data.message || 'Registration failed. Please try again with different details.' 
+                error: errorMessage
             };
         }
 
-        // 🚀 FIX: Assume API returns { token, userId, username, ... } on success
+        // Success case
         return { 
             success: true, 
             token: data.token, 
-            userId: data._id || data.userId, // Use _id if available (common in MongoDB)
-            username: data.username // 🚀 NEW: Ensure username is returned
+            userId: data._id || data.userId,
+            username: data.username
         };
     } catch (error) {
         // Handle network failure
@@ -56,22 +77,29 @@ export const login = async (email, password) => {
         const data = await response.json();
 
         if (!response.ok) {
-            // Return failure object with the error message
+            // 🆕 Extract detailed error message
+            let errorMessage = 'Login failed. Invalid email or password.';
+            
+            if (data.message) {
+                errorMessage = data.message;
+            } else if (data.error) {
+                errorMessage = data.error;
+            }
+            
             return { 
                 success: false, 
-                error: data.message || 'Login failed. Invalid email or password.' 
+                error: errorMessage
             };
         }
 
-        // Assuming your API returns { token: '...', userId: '...', username: '...' } on success
+        // Success case
         return { 
             success: true, 
             token: data.token, 
-            userId: data._id || data.userId, // Use _id if available
-            username: data.username // 🚀 CRITICAL FIX: Ensure username is returned
+            userId: data._id || data.userId,
+            username: data.username
         };
     } catch (error) {
-        // Handle network failure
         console.error("Login Network Error:", error);
         return { success: false, error: 'Network error occurred. Check server availability.' };
     }
@@ -81,9 +109,7 @@ export const login = async (email, password) => {
  * Removes local storage token to simulate logout and returns a success status.
  */
 export const logout = () => {
-    // 🚀 FIX: Ensure we are only removing the authToken, useAuth.jsx handles the rest.
     localStorage.removeItem('authToken'); 
-    localStorage.removeItem('user'); // Also remove 'user' for completeness
-    
+    localStorage.removeItem('user');
     return { success: true }; 
 };

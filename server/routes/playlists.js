@@ -37,22 +37,41 @@ router.post('/', protect, async (req, res) => {
     }
 });
 
-// @route   GET /api/playlists/my-playlists
-// @desc    Get all playlists owned by the logged-in user
-// @access  Private
-// 🛠️ FIX: Renamed from '/' to '/my-playlists' for clarity and to prevent ambiguity
-router.get('/my-playlists', protect, async (req, res) => {
-    try {
-        const playlists = await Playlist.find({ user: req.user.id })
-            .select('-tracks -__v') // Exclude track content for efficiency in list view
-            .sort({ createdAt: -1 });
+// // @route   GET /api/playlists/my-playlists
+// // @desc    Get all playlists owned by the logged-in user
+// // @access  Private
+// // 🛠️ FIX: Renamed from '/' to '/my-playlists' for clarity and to prevent ambiguity
+// router.get('/my-playlists', protect, async (req, res) => {
+//     try {
+//         const playlists = await Playlist.find({ user: req.user.id })
+//             .select('-tracks -__v') // Exclude track content for efficiency in list view
+//             .sort({ createdAt: -1 });
 
-        res.json(playlists);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error: Could not retrieve user playlists.');
-    }
+//         res.json(playlists);
+//     } catch (err) {
+//         console.error(err.message);
+//         res.status(500).send('Server Error: Could not retrieve user playlists.');
+//     }
+// });
+
+
+// @route   GET /api/playlists/my-playlists
+// @desc    Get all playlists owned by the logged-in user (with track IDs)
+// @access  Private
+router.get('/my-playlists', protect, async (req, res) => {
+  try {
+    const playlists = await Playlist.find({ user: req.user.id })
+      // include tracks so frontend can know membership
+      .select('name tracks is_public createdAt updatedAt') 
+      .sort({ createdAt: -1 });
+
+    res.json(playlists);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error: Could not retrieve user playlists.');
+  }
 });
+
 
 
 // @route   GET /api/playlists/:id
@@ -214,5 +233,29 @@ router.put('/:id', protect, async (req, res) => {
         res.status(500).send('Server Error: Could not update playlist.');
     }
 });
+
+// @route   GET /api/playlists/by-track/:trackId
+// @desc    Get all user's playlists that contain the given track
+// @access  Private
+router.get('/by-track/:trackId', protect, async (req, res) => {
+  const { trackId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(trackId)) {
+    return res.status(400).json({ msg: 'Invalid track ID.' });
+  }
+
+  try {
+    const playlists = await Playlist.find({
+      user: req.user.id,
+      tracks: trackId, // Mongo: element in tracks array equals trackId
+    }).select('_id name');
+
+    res.json(playlists);
+  } catch (err) {
+    console.error('Error fetching playlists by track:', err);
+    res.status(500).json({ msg: 'Server Error: Could not retrieve playlists for track.' });
+  }
+});
+
 
 module.exports = router;

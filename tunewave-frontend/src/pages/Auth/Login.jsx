@@ -32,62 +32,61 @@ const AuthCard = ({ title, onSubmit, darkMode, children }) => {
     );
 };
 
-
 const Login = ({ darkMode }) => {
     const navigate = useNavigate();
     const [mode, setMode] = useState('login'); 
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [registrationSuccess, setRegistrationSuccess] = useState(false); 
+    const [registrationSuccess, setRegistrationSuccess] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const { isAuthenticated, loading, error, login, register, setError } = useAuth();
 
-    // Clear form and state when switching modes
     useEffect(() => {
         setUsername('');
         setEmail('');
         setPassword('');
         setError(null);
         setRegistrationSuccess(false);
+        setIsSubmitting(false);
     }, [mode, setError]);
 
-    // Redirection Handler: Triggers immediately after state change in useAuth
     useEffect(() => {
         if (isAuthenticated) {
-            // Redirects to the root path ("/")
             navigate('/', { replace: true }); 
         }
     }, [isAuthenticated, navigate]);
 
-    // Handles form submission
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // 💡 FIX 2: Guard clause for redirection failure
         if (isAuthenticated) {
-             // Already logged in, force navigation
             navigate('/', { replace: true });
             return; 
         }
 
         setError(null);
         setRegistrationSuccess(false);
+        setIsSubmitting(true); // Start spinner
         
-        if (mode === 'login') {
-            await login(email, password);
-        } else {
-            const success = await register(username, email, password);
-            if (success) {
-                setMode('login');
-                setRegistrationSuccess(true);
-                setEmail(email);
-                setPassword('');
+        try {
+            if (mode === 'login') {
+                await login(email, password);
+            } else {
+                const success = await register(username, email, password);
+                if (success) {
+                    setMode('login');
+                    setRegistrationSuccess(true);
+                    setEmail(email);
+                    setPassword('');
+                }
             }
+        } finally {
+            setIsSubmitting(false); // Stop spinner regardless of success/error
         }
     };
     
-    // Logic for button text and form validation
     const actionText = mode === 'login' ? 'Sign In' : 'Register Account';
     const isFormIncomplete = mode === 'register' ? (!username || !email || !password) : (!email || !password);
     const Icon = mode === 'login' ? LogIn : UserPlus;
@@ -98,14 +97,12 @@ const Login = ({ darkMode }) => {
             onSubmit={handleSubmit}
             darkMode={darkMode}
         >
-            {/* Error Message Display */}
             {error && (
                 <div className="p-3 bg-red-600 text-white rounded-lg font-medium text-sm">
                     {error}
                 </div>
             )}
             
-            {/* Registration Success Message */}
             {registrationSuccess && (
                 <div className="p-3 bg-green-600 text-white rounded-lg font-medium text-sm flex items-center space-x-2">
                     <CheckCircle className="h-5 w-5" />
@@ -113,7 +110,6 @@ const Login = ({ darkMode }) => {
                 </div>
             )}
             
-            {/* Input Fields */}
             {mode === 'register' && (
                 <InputField 
                     label="Username"
@@ -145,24 +141,18 @@ const Login = ({ darkMode }) => {
                 darkMode={darkMode}
             />
             
-            {/* Action Button */}
+            {/* Button shows spinner ONLY when isSubmitting is true */}
             <PrimaryButton 
                 type="submit" 
                 fullWidth 
-                disabled={loading || isFormIncomplete}
+                disabled={isFormIncomplete}  // Disable when form incomplete
+                loading={isSubmitting}        // Show spinner only when submitting
             >
-                {/* 💡 FIX 1: Conditional rendering for UI glitch */}
-                {loading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                    <>
-                        <Icon className="h-5 w-5 mr-2" />
-                        {actionText}
-                    </>
-                )}
+                <Icon className="h-5 w-5 mr-2" />
+                {actionText}
             </PrimaryButton>
 
-            {/* Mode Toggle Link */}
+
             <p className={`text-sm text-center mt-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                 {mode === 'login' ? (
                     <>

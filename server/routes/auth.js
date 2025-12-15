@@ -21,7 +21,9 @@ router.post('/register', async (req, res) => {
     // Check if user already exists
     let user = await User.findOne({ $or: [{ email }, { username }] });
     if (user) {
-      return res.status(400).json({ msg: 'User already exists with that email or username.' });
+      return res.status(400).json({ 
+        message: 'User already exists with that email or username.' 
+      });
     }
 
     // Create new user (password is auto-hashed via Mongoose pre-save hook)
@@ -37,10 +39,31 @@ router.post('/register', async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error: Registration failed.');
+    console.error(err);
+    
+    // 🆕 Handle Mongoose validation errors
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map(error => error.message);
+      return res.status(400).json({ 
+        message: messages.join('. ')
+      });
+    }
+    
+    // 🆕 Handle duplicate key errors (alternative to findOne check)
+    if (err.code === 11000) {
+      const field = Object.keys(err.keyPattern)[0];
+      return res.status(400).json({ 
+        message: `A user with that ${field} already exists.`
+      });
+    }
+    
+    // Generic server error
+    res.status(500).json({ 
+      message: 'Server Error: Registration failed.'
+    });
   }
 });
+
 
 // @route   POST /api/auth/login
 // @desc    Authenticate user & get token
