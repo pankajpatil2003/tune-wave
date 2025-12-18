@@ -1,16 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs/promises');
 const Track = require('../models/Track');
 const { protect } = require('../middleware/auth'); 
 const { parseFile } = require('music-metadata');
 
-// --- Configuration & Utility Functions (keep as is) ---
+// Cloudinary setup
+const { upload, uploadToCloudinary } = require('../middleware/uploadMiddleware');
+const cloudinary = require('../config/cloudinary'); // Add this
+
+// --- Configuration & Utility Functions ---
+
+// Keep upload directory for backward compatibility (if you have old local files)
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 fs.mkdir(UPLOAD_DIR, { recursive: true }).catch(console.error);
 
+// YouTube ID extraction helper
 const getYouTubeId = (url) => {
     if (!url) return null;
     const regExp = /^(?:https?:\/\/)?(?:www\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})(?:\S+)?$/;
@@ -18,35 +24,7 @@ const getYouTubeId = (url) => {
     return (match && match[1].length === 11) ? match[1] : null;
 };
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, UPLOAD_DIR);
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        const baseName = path.basename(file.originalname, ext).replace(/\s/g, '_');
-        cb(null, Date.now() + '-' + baseName + ext);
-    }
-});
-
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 50 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('audio/') || file.mimetype === 'video/mp4' || file.mimetype.startsWith('image/')) {
-            cb(null, true);
-        } else {
-            cb(new Error('Unsupported file type. Only audio, mp4 video, and image files are allowed.'), false);
-        }
-    }
-}).fields([
-    { name: 'audioFile', maxCount: 1 }, 
-    { name: 'cover_photo', maxCount: 1 }
-]);
-
-
-// Helper function - make sure this is at the top of your file
-
+// Random default image helper
 const getRandomDefaultImage = async () => {
     try {
         const defaultImageDir = path.join(__dirname, '..', 'images', 'default_img_bucket');
@@ -184,6 +162,35 @@ router.get('/my-tracks', protect, async (req, res) => {
     }
 });
 
+// // @route   GET /api/tracks/:id
+// // @desc    Get a single track by ID (only if it belongs to the user)
+// // @access  Private
+// router.get('/:id', protect, async (req, res) => {
+//     try {
+//         const track = await Track.findOne({ 
+//             _id: req.params.id, 
+//             user: req.user.id // 🆕 Verify ownership
+//         })
+//             .populate('user', 'username profile_image');
+
+//         if (!track) {
+//             return res.status(404).json({ message: 'Track not found or you do not have permission to access it.' });
+//         }
+
+//         res.json({ track }); // 🆕 Wrap in object for consistency
+
+//     } catch (err) {
+//         console.error(err.message);
+//         if (err.kind === 'ObjectId') {
+//             return res.status(404).json({ message: 'Track not found (Invalid ID format).' });
+//         }
+//         res.status(500).json({ message: 'Server Error: Could not retrieve track.' });
+//     }
+// });
+
+
+
+
 // @route   GET /api/tracks/:id
 // @desc    Get a single track by ID (only if it belongs to the user)
 // @access  Private
@@ -191,7 +198,7 @@ router.get('/:id', protect, async (req, res) => {
     try {
         const track = await Track.findOne({ 
             _id: req.params.id, 
-            user: req.user.id // 🆕 Verify ownership
+            user: req.user.id // Verify ownership
         })
             .populate('user', 'username profile_image');
 
@@ -199,7 +206,22 @@ router.get('/:id', protect, async (req, res) => {
             return res.status(404).json({ message: 'Track not found or you do not have permission to access it.' });
         }
 
-        res.json({ track }); // 🆕 Wrap in object for consistency
+        // Format the track data to ensure consistent response
+        const trackData = track.toObject();
+        
+        // If filePath exists and is a Cloudinary URL, it's ready to use
+        // If it's a local path (old data), you might want to handle differently
+        if (trackData.filePath && !trackData.filePath.startsWith('http')) {
+            // Convert old local paths to full URLs if needed
+            trackData.filePath = `${req.protocol}://${req.get('host')}/${trackData.filePath}`;
+        }
+        
+        if (trackData.cover_photo && !trackData.cover_photo.startsWith('http') && !trackData.cover_photo.startsWith('data:')) {
+            // Convert old local cover paths to full URLs
+            trackData.cover_photo = `${req.protocol}://${req.get('host')}/${trackData.cover_photo}`;
+        }
+
+        res.json({ track: trackData });
 
     } catch (err) {
         console.error(err.message);
@@ -210,13 +232,203 @@ router.get('/:id', protect, async (req, res) => {
     }
 });
 
+
+
+
+
+
 // @route   POST /api/tracks
 // @desc    Add a new track link or upload a local file (Private access)
 // @access  Private
 
 
-// Your route
-router.post('/', protect, upload, async (req, res) => {
+// // Your route
+// router.post('/', protect, upload, async (req, res) => {
+    
+//     const audioFile = req.files && req.files['audioFile'] ? req.files['audioFile'][0] : null;
+//     const coverPhotoFile = req.files && req.files['cover_photo'] ? req.files['cover_photo'][0] : null; 
+    
+//     const { title: bodyTitle, artist: bodyArtist, sourceUrl, sourceType, cover_photo: bodyCoverPhoto } = req.body;
+    
+//     console.log('\n=== DEBUG COVER PHOTO ===');
+//     console.log('bodyCoverPhoto:', bodyCoverPhoto);
+//     console.log('bodyCoverPhoto type:', typeof bodyCoverPhoto);
+//     console.log('coverPhotoFile:', coverPhotoFile);
+    
+//     const finalSourceType = sourceType || (audioFile ? 'local' : 'external_url');
+    
+//     // 🔍 NEW DEBUG LINES
+//     console.log('🔍 finalSourceType:', finalSourceType);
+//     console.log('🔍 audioFile exists:', !!audioFile);
+//     console.log('🔍 sourceUrl:', sourceUrl);
+//     console.log('🔍 sourceType from body:', sourceType);
+
+//     let newTrackData = { 
+//         title: bodyTitle, 
+//         artist: bodyArtist, 
+//         sourceType: finalSourceType, 
+//         user: req.user.id,
+//     };
+    
+//     // 1. LOCAL FILE UPLOAD
+//     if (finalSourceType === 'local') {
+//         console.log('✅ ENTERED LOCAL BLOCK');
+        
+//         if (!audioFile) {
+//             return res.status(400).json({ msg: 'No audio file was uploaded for a local track.' });
+//         }
+
+//         const cleanupFiles = async () => {
+//             if (audioFile) await fs.unlink(audioFile.path).catch(() => {});
+//             if (coverPhotoFile) await fs.unlink(coverPhotoFile.path).catch(() => {});
+//         };
+
+//         try {
+//             const metadata = await parseFile(audioFile.path);
+
+//             newTrackData.title = metadata.common.title || newTrackData.title;
+//             newTrackData.artist = metadata.common.artist || newTrackData.artist;
+            
+//             console.log('🔍 Checking cover photo sources...');
+            
+//             // Priority 1: Uploaded cover file
+//             if (coverPhotoFile) {
+//                 console.log('✓ Using uploaded cover file');
+//                 newTrackData.cover_photo = path.join('uploads', coverPhotoFile.filename).replace(/\\/g, '/');
+//             } 
+//             // Priority 2: Embedded metadata picture
+//             else if (metadata.common.picture && metadata.common.picture.length > 0) {
+//                 console.log('✓ Using embedded cover from metadata');
+//                 const picture = metadata.common.picture[0];
+//                 const mime = picture.format;
+//                 const buffer = picture.data.toString('base64');
+//                 newTrackData.cover_photo = `data:${mime};base64,${buffer}`;
+//             } 
+//             // Priority 3: Random default image
+//             else {
+//                 console.log('✓ No cover found, getting random default...');
+//                 newTrackData.cover_photo = await getRandomDefaultImage();
+//             }
+            
+//             console.log('✅ Final cover_photo value:', newTrackData.cover_photo);
+            
+//             newTrackData.filePath = path.join('uploads', audioFile.filename).replace(/\\/g, '/');
+//             newTrackData.mimeType = audioFile.mimetype;
+
+//         } catch (metaErr) {
+//             console.warn(`⚠️ Could not read metadata. Error: ${metaErr.message}`);
+            
+//             newTrackData.filePath = path.join('uploads', audioFile.filename).replace(/\\/g, '/');
+//             newTrackData.mimeType = audioFile.mimetype;
+            
+//             if (coverPhotoFile) {
+//                 newTrackData.cover_photo = path.join('uploads', coverPhotoFile.filename).replace(/\\/g, '/');
+//             } else {
+//                 console.log('⚠️ Metadata error - getting random default');
+//                 newTrackData.cover_photo = await getRandomDefaultImage();
+//             }
+//         }
+        
+//         console.log('🔍 About to save track with data:', JSON.stringify(newTrackData, null, 2));
+        
+//         if (!newTrackData.title || !newTrackData.artist) {
+//             await cleanupFiles();
+//             return res.status(400).json({ msg: 'Title and Artist are required, but could not be extracted or provided manually.' });
+//         }
+
+//         try {
+//             const newTrack = new Track(newTrackData);
+//             const track = await newTrack.save();
+//             console.log('✅ Track saved successfully with cover:', track.cover_photo);
+//             res.status(201).json(track); 
+//         } catch (dbErr) {
+//             await cleanupFiles();
+            
+//             if (dbErr.code === 11000) {
+//                 return res.status(400).json({ msg: 'This link has already been uploaded or is invalid.' });
+//             }
+//             console.error('❌ DB Error:', dbErr.message);
+//             res.status(500).send('Server Error: Could not save track.');
+//         }
+//         return;
+//     } 
+    
+//     // 2. YOUTUBE
+//     else if (finalSourceType === 'youtube') {
+//         console.log('✅ ENTERED YOUTUBE BLOCK');
+        
+//         if (!sourceUrl) {
+//             return res.status(400).json({ msg: 'YouTube URL is required.' });
+//         }
+//         const videoId = getYouTubeId(sourceUrl);
+//         if (!videoId) {
+//             return res.status(400).json({ msg: 'Invalid or unsupported YouTube URL provided.' });
+//         }
+//         newTrackData.sourceUrl = sourceUrl;
+//         newTrackData.videoId = videoId;
+        
+//         // 🌟 ADD RANDOM COVER FOR YOUTUBE
+//         if (!bodyCoverPhoto) {
+//             console.log('✓ YouTube track - getting random cover');
+//             newTrackData.cover_photo = await getRandomDefaultImage();
+//         } else {
+//             newTrackData.cover_photo = bodyCoverPhoto;
+//         }
+        
+//     } 
+    
+//     // 3. EXTERNAL URL
+//     else if (finalSourceType === 'external_url') {
+//         console.log('✅ ENTERED EXTERNAL_URL BLOCK');
+        
+//         if (!sourceUrl || !sourceUrl.startsWith('http')) {
+//             return res.status(400).json({ msg: 'Invalid external URL provided.' });
+//         }
+//         newTrackData.sourceUrl = sourceUrl;
+        
+//         // 🌟 ADD RANDOM COVER FOR EXTERNAL URL
+//         if (!bodyCoverPhoto) {
+//             console.log('✓ External URL track - getting random cover');
+//             newTrackData.cover_photo = await getRandomDefaultImage();
+//         } else {
+//             newTrackData.cover_photo = bodyCoverPhoto;
+//         }
+        
+//     } else {
+//         return res.status(400).json({ msg: 'Invalid source type specified.' });
+//     }
+
+//     console.log('🔍 Final data for external link:', JSON.stringify(newTrackData, null, 2));
+
+//     if (!newTrackData.title || !newTrackData.artist) {
+//         return res.status(400).json({ msg: 'Title and Artist are required for external links.' });
+//     }
+
+//     try {
+//         const newTrack = new Track(newTrackData);
+//         const track = await newTrack.save();
+//         console.log('✅ External track saved with cover:', track.cover_photo);
+//         res.status(201).json(track); 
+//     } catch (dbErr) {
+//         if (dbErr.code === 11000) {
+//             return res.status(400).json({ msg: 'This link has already been uploaded or is invalid.' });
+//         }
+//         console.error('❌ DB Error:', dbErr.message);
+//         res.status(500).send('Server Error: Could not save track.');
+//     }
+// });
+
+
+
+
+
+
+
+// Updated route with Cloudinary
+router.post('/', protect, upload.fields([
+    { name: 'audioFile', maxCount: 1 },
+    { name: 'cover_photo', maxCount: 1 }
+]), async (req, res) => {
     
     const audioFile = req.files && req.files['audioFile'] ? req.files['audioFile'][0] : null;
     const coverPhotoFile = req.files && req.files['cover_photo'] ? req.files['cover_photo'][0] : null; 
@@ -230,7 +442,6 @@ router.post('/', protect, upload, async (req, res) => {
     
     const finalSourceType = sourceType || (audioFile ? 'local' : 'external_url');
     
-    // 🔍 NEW DEBUG LINES
     console.log('🔍 finalSourceType:', finalSourceType);
     console.log('🔍 audioFile exists:', !!audioFile);
     console.log('🔍 sourceUrl:', sourceUrl);
@@ -243,7 +454,7 @@ router.post('/', protect, upload, async (req, res) => {
         user: req.user.id,
     };
     
-    // 1. LOCAL FILE UPLOAD
+    // 1. LOCAL FILE UPLOAD WITH CLOUDINARY
     if (finalSourceType === 'local') {
         console.log('✅ ENTERED LOCAL BLOCK');
         
@@ -251,61 +462,72 @@ router.post('/', protect, upload, async (req, res) => {
             return res.status(400).json({ msg: 'No audio file was uploaded for a local track.' });
         }
 
-        const cleanupFiles = async () => {
-            if (audioFile) await fs.unlink(audioFile.path).catch(() => {});
-            if (coverPhotoFile) await fs.unlink(coverPhotoFile.path).catch(() => {});
-        };
-
         try {
-            const metadata = await parseFile(audioFile.path);
-
-            newTrackData.title = metadata.common.title || newTrackData.title;
-            newTrackData.artist = metadata.common.artist || newTrackData.artist;
+            // Upload audio file to Cloudinary
+            console.log('📤 Uploading audio to Cloudinary...');
+            const audioUploadResult = await uploadToCloudinary(audioFile);
+            console.log('✅ Audio uploaded:', audioUploadResult.url);
             
-            console.log('🔍 Checking cover photo sources...');
+            newTrackData.filePath = audioUploadResult.url;
+            newTrackData.cloudinary_public_id = audioUploadResult.public_id;
+            newTrackData.mimeType = audioFile.mimetype;
             
-            // Priority 1: Uploaded cover file
-            if (coverPhotoFile) {
-                console.log('✓ Using uploaded cover file');
-                newTrackData.cover_photo = path.join('uploads', coverPhotoFile.filename).replace(/\\/g, '/');
-            } 
-            // Priority 2: Embedded metadata picture
-            else if (metadata.common.picture && metadata.common.picture.length > 0) {
-                console.log('✓ Using embedded cover from metadata');
-                const picture = metadata.common.picture[0];
-                const mime = picture.format;
-                const buffer = picture.data.toString('base64');
-                newTrackData.cover_photo = `data:${mime};base64,${buffer}`;
-            } 
-            // Priority 3: Random default image
-            else {
-                console.log('✓ No cover found, getting random default...');
-                newTrackData.cover_photo = await getRandomDefaultImage();
+            // Try to extract metadata from buffer (optional - might need music-metadata library)
+            try {
+                const mm = require('music-metadata');
+                const metadata = await mm.parseBuffer(audioFile.buffer, audioFile.mimetype);
+                
+                newTrackData.title = metadata.common.title || newTrackData.title;
+                newTrackData.artist = metadata.common.artist || newTrackData.artist;
+                
+                console.log('🔍 Checking cover photo sources...');
+                
+                // Priority 1: Uploaded cover file
+                if (coverPhotoFile) {
+                    console.log('✓ Using uploaded cover file - uploading to Cloudinary');
+                    const coverUploadResult = await uploadToCloudinary(coverPhotoFile);
+                    newTrackData.cover_photo = coverUploadResult.url;
+                    newTrackData.cover_cloudinary_public_id = coverUploadResult.public_id;
+                } 
+                // Priority 2: Embedded metadata picture
+                else if (metadata.common.picture && metadata.common.picture.length > 0) {
+                    console.log('✓ Using embedded cover from metadata');
+                    const picture = metadata.common.picture[0];
+                    const mime = picture.format;
+                    const buffer = picture.data.toString('base64');
+                    newTrackData.cover_photo = `data:${mime};base64,${buffer}`;
+                } 
+                // Priority 3: Random default image
+                else {
+                    console.log('✓ No cover found, getting random default...');
+                    newTrackData.cover_photo = await getRandomDefaultImage();
+                }
+                
+            } catch (metaErr) {
+                console.warn(`⚠️ Could not read metadata. Error: ${metaErr.message}`);
+                
+                // Handle cover photo even if metadata fails
+                if (coverPhotoFile) {
+                    console.log('✓ Uploading cover photo to Cloudinary');
+                    const coverUploadResult = await uploadToCloudinary(coverPhotoFile);
+                    newTrackData.cover_photo = coverUploadResult.url;
+                    newTrackData.cover_cloudinary_public_id = coverUploadResult.public_id;
+                } else {
+                    console.log('⚠️ Metadata error - getting random default');
+                    newTrackData.cover_photo = await getRandomDefaultImage();
+                }
             }
             
             console.log('✅ Final cover_photo value:', newTrackData.cover_photo);
             
-            newTrackData.filePath = path.join('uploads', audioFile.filename).replace(/\\/g, '/');
-            newTrackData.mimeType = audioFile.mimetype;
-
-        } catch (metaErr) {
-            console.warn(`⚠️ Could not read metadata. Error: ${metaErr.message}`);
-            
-            newTrackData.filePath = path.join('uploads', audioFile.filename).replace(/\\/g, '/');
-            newTrackData.mimeType = audioFile.mimetype;
-            
-            if (coverPhotoFile) {
-                newTrackData.cover_photo = path.join('uploads', coverPhotoFile.filename).replace(/\\/g, '/');
-            } else {
-                console.log('⚠️ Metadata error - getting random default');
-                newTrackData.cover_photo = await getRandomDefaultImage();
-            }
+        } catch (uploadErr) {
+            console.error('❌ Cloudinary Upload Error:', uploadErr.message);
+            return res.status(500).json({ msg: 'Failed to upload files to cloud storage.' });
         }
         
         console.log('🔍 About to save track with data:', JSON.stringify(newTrackData, null, 2));
         
         if (!newTrackData.title || !newTrackData.artist) {
-            await cleanupFiles();
             return res.status(400).json({ msg: 'Title and Artist are required, but could not be extracted or provided manually.' });
         }
 
@@ -315,8 +537,6 @@ router.post('/', protect, upload, async (req, res) => {
             console.log('✅ Track saved successfully with cover:', track.cover_photo);
             res.status(201).json(track); 
         } catch (dbErr) {
-            await cleanupFiles();
-            
             if (dbErr.code === 11000) {
                 return res.status(400).json({ msg: 'This link has already been uploaded or is invalid.' });
             }
@@ -340,8 +560,17 @@ router.post('/', protect, upload, async (req, res) => {
         newTrackData.sourceUrl = sourceUrl;
         newTrackData.videoId = videoId;
         
-        // 🌟 ADD RANDOM COVER FOR YOUTUBE
-        if (!bodyCoverPhoto) {
+        // Handle cover photo for YouTube
+        if (coverPhotoFile) {
+            try {
+                const coverUploadResult = await uploadToCloudinary(coverPhotoFile);
+                newTrackData.cover_photo = coverUploadResult.url;
+                newTrackData.cover_cloudinary_public_id = coverUploadResult.public_id;
+            } catch (err) {
+                console.error('Cover upload failed:', err);
+                newTrackData.cover_photo = await getRandomDefaultImage();
+            }
+        } else if (!bodyCoverPhoto) {
             console.log('✓ YouTube track - getting random cover');
             newTrackData.cover_photo = await getRandomDefaultImage();
         } else {
@@ -359,8 +588,17 @@ router.post('/', protect, upload, async (req, res) => {
         }
         newTrackData.sourceUrl = sourceUrl;
         
-        // 🌟 ADD RANDOM COVER FOR EXTERNAL URL
-        if (!bodyCoverPhoto) {
+        // Handle cover photo for External URL
+        if (coverPhotoFile) {
+            try {
+                const coverUploadResult = await uploadToCloudinary(coverPhotoFile);
+                newTrackData.cover_photo = coverUploadResult.url;
+                newTrackData.cover_cloudinary_public_id = coverUploadResult.public_id;
+            } catch (err) {
+                console.error('Cover upload failed:', err);
+                newTrackData.cover_photo = await getRandomDefaultImage();
+            }
+        } else if (!bodyCoverPhoto) {
             console.log('✓ External URL track - getting random cover');
             newTrackData.cover_photo = await getRandomDefaultImage();
         } else {
@@ -390,6 +628,12 @@ router.post('/', protect, upload, async (req, res) => {
         res.status(500).send('Server Error: Could not save track.');
     }
 });
+
+
+
+
+
+
 
 // @route   DELETE /api/tracks/:id
 // @desc    Delete a track by ID and its file (if local) (Private access)
